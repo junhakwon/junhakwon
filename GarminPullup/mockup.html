@@ -184,19 +184,24 @@ function drawPullup(ctx, p, box) {
   tg.addColorStop(0, SKIN_LO); tg.addColorStop(.25, SKIN); tg.addColorStop(.5, SKIN_HI); tg.addColorStop(.75, SKIN); tg.addColorStop(1, SKIN_LO);
   trace([[95, Y(-14)], [S[0].x + 2, Y(-4)], [S[0].x - 3, Y(10)], [S[0].x + 1, Y(28), 85, Y(46)], [83, hipY + 4], [117, hipY + 4], [115, Y(46)], [S[1].x - 1, Y(28), S[1].x + 3, Y(10)], [S[1].x - 2, Y(-4)], [105, Y(-14)]]);
   ctx.fillStyle = tg; ctx.fill(); line(.8, .45); ctx.stroke();
+  // the whole back below the trapezius works in a pull-up: a red underlayer so no grey gaps show between muscles
+  ctx.save(); ctx.clip();
+  const ul = ctx.createLinearGradient(0, Y(4), 0, hipY);
+  ul.addColorStop(0, `rgba(200,44,32,${.55 * on})`); ul.addColorStop(1, `rgba(170,32,24,${.5 * on})`);
+  ctx.fillStyle = ul; ctx.fillRect(0, Y(4), 200, hipY - Y(4) + 6); ctx.restore();
 
   [-1, 1].forEach(sd => {
     const X = (dx) => 100 + sd * dx, bow = sd * 1.6;
     // thoracolumbar fascia (lighter diamond) and erector spinae beneath it
-    muscle([[X(0), Y(30)], [X(8), Y(40)], [X(11), hipY], [X(0), hipY]], { hi: SKIN_HI, lo: SKIN, fibre: "rgba(30,32,36,.12)" }, [X(1), Y(31)], [X(1), hipY], [X(8), Y(41)], [X(10), hipY], 3, { edge: .25, sharp: true });
+    muscle([[X(0), Y(30)], [X(8), Y(40)], [X(11), hipY], [X(0), hipY]], RED(on * .85), [X(1), Y(31)], [X(1), hipY], [X(8), Y(41)], [X(10), hipY], 3, { edge: .25, sharp: true });
     line(.7, .3); ctx.beginPath(); ctx.moveTo(X(5), Y(28)); ctx.quadraticCurveTo(X(7), Y(44), X(5.5), hipY - 1); ctx.stroke();
-    // external oblique (grey)
-    muscle([[X(14), Y(38)], [X(17.5), Y(46)], [X(17), hipY + 2], [X(11.5), hipY + 2], [X(11), Y(44)]], GREY, [X(14), Y(38)], [X(17), Y(47)], [X(11), Y(45)], [X(12), hipY + 1], 5);
+    // external oblique
+    muscle([[X(14), Y(38)], [X(17.5), Y(46)], [X(17), hipY + 2], [X(11.5), hipY + 2], [X(11), Y(44)]], RED(on * .85), [X(14), Y(38)], [X(17), Y(47)], [X(11), Y(45)], [X(12), hipY + 1], 5);
     // latissimus dorsi (red): armpit → lower back, ending in the fascia
     muscle([[X(32), Y(9)], [X(32), Y(26), X(16), Y(44)], [X(10), Y(48)], [X(7), Y(40)], [X(4), Y(30)], [X(7), Y(22)], [X(14), Y(18)], [X(22), Y(17)], [X(31), Y(14)]], RED(on),
       [X(31), Y(10)], [X(28), Y(15)], [X(15), Y(45)], [X(5), Y(31)], 13, { bow });
     // infraspinatus (grey) on the shoulder blade
-    const SOFT = { hi: SKIN_HI, lo: SKIN, fibre: "rgba(30,32,36,.14)" };
+    const SOFT = RED(on * .9);
     muscle([[X(11), Y(1)], [X(22), Y(-1)], [X(30), Y(4)], [X(31), Y(10)], [X(24), Y(13)], [X(13), Y(12)]], SOFT,
       [X(12), Y(2)], [X(13), Y(11)], [X(30), Y(5)], [X(25), Y(12)], 7, { edge: .28 });                                  // infraspinatus + teres minor, one smooth sheet
     // teres major (red): a smooth band from the shoulder blade's lower corner into the armpit
