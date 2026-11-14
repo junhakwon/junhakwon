@@ -17,7 +17,7 @@
 | 항목 | 상태 |
 |---|---|
 | `.shortcut` plist 생성 | 가능 (Python `plistlib`) |
-| 파일 서명 (`shortcuts sign`) | **불가** — macOS 전용. iOS 15+는 서명 안 된 파일을 가져오지 못함 |
+| 파일 서명 (`shortcuts sign`) | **불가** — macOS 전용. iOS 15+는 서명 안 된 파일을 가져오지 못함. 사용자는 Mac 없음 → GitHub Actions macOS 러너 서명 또는 iPhone 앱(Jellycuts 등) 경로 검토 |
 | 구조 검증 | 가능 (plist 파싱, 액션 식별자·변수 참조 점검) |
 | 실기기 테스트 | 불가 (사용자 iPhone에서 직접) |
 | Gmail | 커넥터 설치됨, **연결 미완료** |
