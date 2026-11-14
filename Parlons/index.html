@@ -104,6 +104,22 @@ button:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
 .go:disabled { opacity: .45; cursor: default; }
 .foot { margin-top: auto; display: grid; gap: 12px; }
 
+.tricky, .voice { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: grid; gap: 10px; }
+.tricky-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.tricky-head > div { min-width: 0; flex: 1 1 260px; }
+.tricky p { margin: 2px 0 0; color: var(--muted); font-size: 15px; }
+.tricky-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.tw { width: 100%; display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; text-align: left;
+  background: var(--bad-bg); border: 1px solid transparent; border-radius: 12px; padding: 8px 10px; }
+.tw-pic { grid-row: span 2; font-size: 26px; }
+.tw-fr { font-family: var(--font-display); font-weight: 700; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.tw-meta { font-size: 12px; color: var(--bad); font-variant-numeric: tabular-nums; }
+.voice-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.voice select { flex: 1 1 220px; min-width: 0; font: inherit; font-size: 15px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.note-left { margin: 0; font-size: 14px; color: var(--muted); }
+.ex { background: none; border: none; color: var(--muted); font-size: 17px; font-style: italic; padding: 2px 6px; }
+.tr-note { display: block; font-size: 14px; color: var(--muted); margin-top: 2px; }
+.missed { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .done { text-align: center; display: grid; gap: 14px; justify-items: center; padding-top: 30px; }
 .done .big { font-size: 80px; }
 .done .stars { font-size: 34px; }
@@ -144,12 +160,28 @@ const UNITS = [
     { fr: "Merci", pic: "🙏", en: "Thank you" }, { fr: "Oui", pic: "👍", en: "Yes" }, { fr: "Non", pic: "👎", en: "No" },
     { fr: "Au revoir", pic: "👋🚪", en: "Goodbye" } ] },
 ];
+/* A short natural sentence for each item, heard after the word on the discover card. */
+const EX = {
+  "un homme": "Regarde, c'est un homme.", "une femme": "Voici une femme.", "un garçon": "C'est un petit garçon.",
+  "une fille": "C'est une fille.", "un bébé": "Oh, un bébé !", "un chien": "J'ai un chien.", "un chat": "Il y a un chat.",
+  "une pomme": "Je mange une pomme.", "du pain": "Je voudrais du pain, s'il vous plaît.", "du fromage": "J'adore le fromage.",
+  "un croissant": "Un croissant, s'il vous plaît.", "du café": "Tu veux du café ?", "du lait": "Je bois du lait.",
+  "une orange": "C'est une orange.", "Le garçon mange": "Le garçon mange une pomme.", "La femme boit": "La femme boit un café.",
+  "La fille lit": "La fille lit un livre.", "L'homme court": "L'homme court vite.", "Le bébé dort": "Chut, le bébé dort.",
+  "Le chien nage": "Le chien nage dans la mer.", "rouge": "La fraise est rouge.", "bleu": "Le ciel est bleu.",
+  "vert": "L'arbre est vert.", "jaune": "Le soleil est jaune.", "La pomme est rouge": "Oui, la pomme est rouge.",
+  "La banane est jaune": "La banane est bien jaune.", "deux chats": "Il y a deux chats.", "trois chats": "Regarde, trois chats !",
+  "deux pommes": "Je voudrais deux pommes.", "trois pommes": "J'ai trois pommes.", "quatre croissants": "Quatre croissants, s'il vous plaît.",
+  "Bonjour": "Bonjour, ça va ?", "Bonne nuit": "Bonne nuit, à demain !", "Merci": "Merci beaucoup !", "Oui": "Oui, bien sûr.",
+  "Non": "Non, merci.", "Au revoir": "Au revoir, à bientôt !",
+};
+UNITS.forEach(u => u.items.forEach(it => { it.ex = EX[it.fr] || ""; }));
 const ALL = UNITS.flatMap(u => u.items.map(it => ({ ...it, unit: u.id })));
 const BOX_DAYS = [0, 0, 1, 3, 7, 16];
 
 /* ---------- Per-learner progress in this browser ---------- */
 const KEY = "parlons-v1";
-let S = { best: {}, srs: {}, xp: 0, streak: { day: "", n: 0 } };
+let S = { best: {}, srs: {}, xp: 0, streak: { day: "", n: 0 }, voice: "auto", miss: {} };
 try { const raw = localStorage.getItem(KEY); if (raw) S = { ...S, ...JSON.parse(raw) }; } catch (e) {}
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
 const today = () => new Date().toISOString().slice(0, 10);
@@ -165,26 +197,80 @@ function grade(fr, ok) {
   S.srs[fr] = r;
 }
 const dueItems = () => ALL.filter(it => S.srs[it.fr] && S.srs[it.fr].due <= Date.now());
+/* Tricky words: every miss is counted; a word leaves the list after 3 right answers in a row. */
+const CLEAR_AFTER = 3;
+function trackMiss(fr, ok) {
+  const m = S.miss[fr];
+  if (!ok) { S.miss[fr] = { n: (m ? m.n : 0) + 1, streak: 0, last: Date.now() }; return "added"; }
+  if (!m) return null;
+  m.streak++;
+  if (m.streak >= CLEAR_AFTER) { delete S.miss[fr]; return "cleared"; }
+  return "progress";
+}
+const trickyItems = () => Object.entries(S.miss)
+  .sort((a, b) => b[1].n - a[1].n || b[1].last - a[1].last)
+  .map(([fr, m]) => { const it = ALL.find(x => x.fr === fr); return it ? { ...it, m } : null; })
+  .filter(Boolean);
 
-/* ---------- Voice: Claude voice where offered, else the browser's French voice ---------- */
+/* ---------- Voice: the most natural French voice this device has ---------- */
 let tts = null, dict = null;
-window.claude?.use?.("tts").then(t => { tts = t; }).catch(() => {});
+window.claude?.use?.("tts").then(t => { tts = t; if (!L) render(); }).catch(() => {});
 window.claude?.use?.("dictation").then(d => { dict = d; render(); }).catch(() => {});
-function frVoice() {
-  if (!("speechSynthesis" in window)) return null;
-  const vs = speechSynthesis.getVoices();
-  return vs.find(v => /^fr(-|_)FR/i.test(v.lang)) || vs.find(v => /^fr/i.test(v.lang)) || null;
+const NOVELTY = /grand|rocko|eddy|flo\b|reed|sandy|shelley|bad news|bells|bubbles|cellos|jester|organ|trinoids|whisper|zarvox|albert|bahh|boing|wobble/i;
+function voiceScore(v) {
+  const n = v.name.toLowerCase();
+  if (!/^fr/i.test(v.lang) || NOVELTY.test(n)) return -1;
+  let sc = /^fr[-_]fr/i.test(v.lang) ? 50 : 15;
+  if (/premium/.test(n)) sc += 45;
+  if (/natural|neural|online/.test(n)) sc += 40;
+  if (/enhanced|amélior|ameliore/.test(n)) sc += 30;
+  if (/google/.test(n)) sc += 25;
+  if (/audrey|aurélie|aurelie|thomas|marie|denise|henri|eloise|vivienne|rémy|remy|julie|paul/.test(n)) sc += 8;
+  return sc;
 }
-if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => {};
-function say(text, slow) {
-  if (tts) { tts.speak(text, { language: "fr", rate: slow ? 0.75 : 1 }).catch(() => {}); return; }
-  if (!("speechSynthesis" in window)) return;
+function frVoices() {
+  if (!("speechSynthesis" in window)) return [];
+  return speechSynthesis.getVoices().map(v => ({ v, sc: voiceScore(v) })).filter(x => x.sc >= 0)
+    .sort((a, b) => b.sc - a.sc).map(x => x.v);
+}
+const bestQuality = (v) => !!v && /premium|natural|neural|enhanced|amélior|google|online/i.test(v.name);
+function engine() {
+  const vs = frVoices();
+  if (S.voice === "claude" && tts) return { kind: "claude" };
+  const chosen = vs.find(v => v.voiceURI === S.voice);
+  if (chosen) return { kind: "browser", v: chosen };
+  // Automatic: a high-quality device voice, then the Claude voice, then any French device voice.
+  if (bestQuality(vs[0])) return { kind: "browser", v: vs[0] };
+  if (tts) return { kind: "claude" };
+  if (vs[0]) return { kind: "browser", v: vs[0] };
+  return "speechSynthesis" in window ? { kind: "browser", v: null } : null;
+}
+if ("speechSynthesis" in window) {
+  speechSynthesis.getVoices();
+  speechSynthesis.onvoiceschanged = () => { if (!L) render(); };
+}
+/* say("un chien") or say(["un chien", "J'ai un chien."]): lines play in turn, at a natural pace. */
+function say(lines, slow) {
+  lines = [].concat(lines).filter(Boolean);
+  const e = engine(); if (!e || !lines.length) return;
+  if (e.kind === "claude") {
+    tts.speak(lines.map(t => ({ text: t, language: "fr-FR" })), { rate: slow ? 0.75 : 1, language: "fr-FR" }).catch(() => {});
+    return;
+  }
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = "fr-FR"; const v = frVoice(); if (v) u.voice = v;
-  u.rate = slow ? 0.6 : 0.9; speechSynthesis.speak(u);
+  lines.forEach(t => {
+    const u = new SpeechSynthesisUtterance(t);
+    u.lang = (e.v && e.v.lang) || "fr-FR"; if (e.v) u.voice = e.v;
+    u.rate = slow ? 0.72 : 1; u.pitch = 1;
+    speechSynthesis.speak(u);
+  });
 }
-const canSpeak = () => !!tts || "speechSynthesis" in window;
+const canSpeak = () => !!engine();
+function voiceName() {
+  const e = engine(); if (!e) return "No French voice";
+  if (e.kind === "claude") return "Claude voice";
+  return e.v ? e.v.name + (bestQuality(e.v) ? " (high quality)" : "") : "Device default";
+}
 
 /* ---------- Helpers ---------- */
 const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstElementChild; };
@@ -207,7 +293,7 @@ function choicesFor(item, pool, n = 4) {
   const others = shuffle(pool.filter(p => p.fr !== item.fr && p.pic !== item.pic)).slice(0, n - 1);
   return shuffle([item, ...others]);
 }
-function buildLesson(items, pool, review) {
+function buildLesson(items, pool, review, perItem) {
   const steps = [];
   if (!review) {
     const seen = [];
@@ -222,7 +308,7 @@ function buildLesson(items, pool, review) {
     const words = it.fr.split(" ").length;
     const kinds = ["listen", "pic2text", "speak"];
     if (words >= 2) kinds.push("build");
-    const pick = shuffle(kinds).slice(0, review ? 1 : 2);
+    const pick = shuffle(kinds).slice(0, perItem || (review ? 1 : 2));
     pick.forEach(k => mixed.push({ type: k, item: it, choices: k === "pic2text" || k === "listen" ? choicesFor(it, pool) : null }));
   });
   return steps.concat(shuffle(mixed));
@@ -256,6 +342,7 @@ function renderHome() {
     <button class="go" id="review-btn" ${due ? "" : "disabled"}>Review ${due ? due : ""}</button></section>`);
   rv.querySelector("button").onclick = () => startReview();
   app.append(rv);
+  renderTricky();
   const list = $(`<section class="units" aria-label="Units"></section>`);
   UNITS.forEach((u, idx) => {
     const best = S.best[u.id] || 0;
@@ -268,11 +355,59 @@ function renderHome() {
     list.append(b);
   });
   app.append(list);
-  if (!canSpeak()) app.append($(`<p class="note">This browser has no French voice, so lessons show text only.</p>`));
+  renderVoicePanel();
+}
+
+function renderTricky() {
+  const list = trickyItems();
+  const sec = $(`<section class="tricky"><div class="tricky-head"><div><div class="label">Mots difficiles</div>
+    <p>${list.length ? `Words you got wrong. Each one leaves the list after ${CLEAR_AFTER} right answers in a row.` : "Words you get wrong are kept here, with how often you missed them, until you know them."}</p></div>
+    <button class="go" ${list.length ? "" : "disabled"}>Practise ${list.length || ""}</button></div></section>`);
+  sec.querySelector(".go").onclick = () => startTricky();
+  if (list.length) {
+    const ul = $(`<ul class="tricky-list"></ul>`);
+    list.forEach(it => {
+      const li = $(`<li><button class="tw" aria-label="Hear ${esc(it.fr)}"><span class="tw-pic" aria-hidden="true">${it.pic}</span>
+        <span class="tw-fr">${esc(it.fr)}</span><span class="tw-meta">missed ${it.m.n}× · ${it.m.streak}/${CLEAR_AFTER} right</span></button></li>`);
+      li.querySelector("button").onclick = () => say([it.fr, it.ex]);
+      ul.append(li);
+    });
+    sec.append(ul);
+  }
+  app.append(sec);
+}
+
+function renderVoicePanel() {
+  const vs = frVoices();
+  const opts = [`<option value="auto">Automatic (best available)</option>`]
+    .concat(tts ? [`<option value="claude">Claude voice</option>`] : [])
+    .concat(vs.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)} · ${esc(v.lang)}</option>`));
+  const apple = /iPhone|iPad|Macintosh/.test(navigator.userAgent);
+  const weak = !bestQuality(vs[0]);
+  const p = $(`<section class="voice"><div class="label">Voix</div>
+    <div class="voice-row"><select id="voice-pick" aria-label="French voice">${opts.join("")}</select>
+    <button class="chip primary" id="voice-test">🔊 Test</button></div>
+    <p class="note-left">Now speaking: <b>${esc(voiceName())}</b></p>
+    ${weak ? `<p class="note-left">${apple
+      ? "For a native-sounding voice, download one on your iPhone: Settings → Accessibility → Read &amp; Speak (Spoken Content) → Voices → French (France) → Audrey or Thomas, <b>Premium</b> or <b>Enhanced</b>. Then reopen this page; it switches to it automatically."
+      : "For a native-sounding voice, use Chrome or Edge, which include natural French voices, or install a French voice in your system's speech settings."}</p>` : ""}
+  </section>`);
+  const sel = p.querySelector("#voice-pick");
+  sel.value = [...sel.options].some(o => o.value === S.voice) ? S.voice : "auto";
+  const demo = ["Bonjour !", "On apprend le français ensemble ?"];
+  sel.onchange = () => { S.voice = sel.value; save(); say(demo); render(); };
+  p.querySelector("#voice-test").onclick = () => say(demo);
+  app.append(p);
 }
 
 function startUnit(u) {
   L = { unit: u, steps: buildLesson(u.items, u.items, false), i: 0, right: 0, total: 0, missed: new Set(), state: null };
+  render();
+}
+function startTricky() {
+  const items = trickyItems().slice(0, 10).map(({ m, ...it }) => it);
+  if (!items.length) return;
+  L = { unit: null, tricky: true, steps: buildLesson(items, ALL, true, 2), i: 0, right: 0, total: 0, missed: new Set(), state: null };
   render();
 }
 function startReview() {
@@ -307,12 +442,13 @@ function next() { L.i++; L.state = null; render(); }
 
 function finish(ok, item, shownAnswer) {
   L.total++; if (ok) { L.right++; S.xp += 10; } else { L.missed.add(item.fr); L.steps.push({ ...L.steps[L.i], choices: L.steps[L.i].choices && shuffle(L.steps[L.i].choices) }); }
-  grade(item.fr, ok); bumpStreak(); save();
-  say(item.fr);
+  grade(item.fr, ok); const tr = trackMiss(item.fr, ok); bumpStreak(); save();
+  say(ok ? item.fr : [item.fr, item.ex]);
+  const trNote = tr === "added" ? "Saved to your tricky words." : tr === "cleared" ? "Off your tricky list. Bravo !" : tr === "progress" ? `Tricky word: ${S.miss[item.fr].streak}/${CLEAR_AFTER} right in a row.` : "";
   const foot = app.querySelector(".foot");
   foot.innerHTML = "";
   const sheet = $(`<div class="sheet ${ok ? "ok" : "no"}" role="status"><div><b>${ok ? "Très bien !" : "Pas tout à fait"}</b>
-    ${ok ? "" : `<span class="ans">${esc(shownAnswer || item.fr)}</span>`}</div><button class="go">Continuer</button></div>`);
+    ${ok ? "" : `<span class="ans">${esc(shownAnswer || item.fr)}</span>`}${trNote ? `<span class="tr-note">${esc(trNote)}</span>` : ""}</div><button class="go">Continuer</button></div>`);
   sheet.querySelector("button").onclick = next;
   foot.append(sheet);
   sheet.querySelector("button").focus();
@@ -325,12 +461,13 @@ function renderStep() {
 
   if (st.type === "discover") {
     stage.append($(`<div class="prompt">Regardez et écoutez</div>`));
-    const h = $(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div><div class="fr">${esc(it.fr)}</div>${speakRow(it.fr)}
+    const h = $(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div><div class="fr">${esc(it.fr)}</div>
+      ${it.ex ? `<button class="ex" data-say="${esc(it.ex)}">« ${esc(it.ex)} »</button>` : ""}${speakRow(it.fr)}
       <button class="chip" id="hint">Show meaning</button></div>`);
     h.querySelector("#hint").onclick = (e) => { e.target.outerHTML = `<span class="hint">${esc(it.en)}</span>`; };
     wireSpeak(h); stage.append(h);
     const go = $(`<button class="go wide">Suivant</button>`); go.onclick = next; foot.append(go);
-    app.append(foot); say(it.fr); return;
+    app.append(foot); say([it.fr, it.ex]); return;
   }
 
   if (st.type === "listen" || st.type === "read") {
@@ -443,8 +580,9 @@ function renderDone() {
   if (L.unit) { S.best[L.unit.id] = Math.max(S.best[L.unit.id] || 0, pct); save(); }
   const nextUnit = L.unit ? UNITS[UNITS.indexOf(L.unit) + 1] : null;
   const d = $(`<section class="done"><div class="big" aria-hidden="true">${n === 3 ? "🏆" : "🥖"}</div>
-    <h2>${L.unit ? esc(L.unit.title) : "Révision"} terminé</h2>${starsHtml(n)}
-    <p class="muted">${L.right} of ${L.total} answers right${L.missed.size ? `. Missed words come back in your next review.` : "."}</p>
+    <h2>${L.unit ? esc(L.unit.title) : L.tricky ? "Mots difficiles" : "Révision"} terminé</h2>${starsHtml(n)}
+    <p class="muted">${L.right} of ${L.total} answers right${L.missed.size ? ". These are on your tricky list now:" : "."}</p>
+    ${L.missed.size ? `<div class="missed">${[...L.missed].map(fr => { const it = ALL.find(x => x.fr === fr); return `<span class="chip">${it.pic} ${esc(fr)}</span>`; }).join("")}</div>` : ""}
     <div class="speak-row">${nextUnit ? `<button class="go" id="next-unit">Next: ${esc(nextUnit.title)}</button>` : ""}<button class="chip" id="home">Back to units</button></div></section>`);
   d.querySelector("#home").onclick = () => { L = null; render(); };
   const nu = d.querySelector("#next-unit"); if (nu) nu.onclick = () => startUnit(nextUnit);
