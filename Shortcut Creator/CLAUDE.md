@@ -17,7 +17,7 @@
 | 항목 | 상태 |
 |---|---|
 | `.shortcut` plist 생성 | 가능 (Python `plistlib`) |
-| 파일 서명 (`shortcuts sign`) | **불가** — macOS 전용. iOS 15+는 서명 안 된 파일을 가져오지 못함. 사용자는 Mac 없음 → GitHub Actions macOS 러너 서명 또는 iPhone 앱(Jellycuts 등) 경로 검토 |
+| 파일 서명 (`shortcuts sign`) | **불가** — macOS 전용. iOS 15+는 서명 안 된 파일을 가져오지 못함. 사용자는 Mac 없음. GitHub Actions macOS 러너 서명은 **실패 확인**(iCloud 로그인 필요, 2026-11-14). 현재 방식: 서명 안 된 파일을 메일로 보내고 사용자가 sign.shortcuty.app(제3자)에서 서명 |
 | 구조 검증 | 가능 (plist 파싱, 액션 식별자·변수 참조 점검) |
 | 실기기 테스트 | 불가 (사용자 iPhone에서 직접) |
 | Gmail | **연결됨** — `send_message`(첨부 지원, 25MB 이하) 사용 가능. 수신 주소는 첫 발송 전 사용자 확인 필요 |
@@ -26,3 +26,8 @@
 ## 폴더 구조
 - `shortcuts/` — 완성된 단축어 (단축어별 하위 폴더: 원본 plist, 서명본, 설계 문서)
 - `tools/` — 단축어 생성·검증 스크립트
+
+## 납품 기록
+| 날짜 | 단축어 | 상태 |
+|---|---|---|
+| 2026-11-14 | 카카오톡 보내기 | 구조 검증 통과, 서명 안 된 파일을 Gmail로 발송 (sign.shortcuty.app 서명 안내 포함). 실기기 테스트 대기 |
