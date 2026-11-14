@@ -1,0 +1,203 @@
+<title>Pull-Up Watch Face</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;600&display=swap">
+<style>
+/* Layout: two watch bezels side by side (active vs always-on) on a dark bench-press-black stage, a spec rail underneath. */
+:root {
+  --bg: #eceef1; --surface: #ffffff; --ink: #15171b; --muted: #5b616c; --line: #d6dae0;
+  --muscle: #e5402f; --accent: #e5402f; --bezel: #1b1d21; --bezel-edge: #3a3e45;
+  --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e0f12; --surface: #17191d; --ink: #eceef1; --muted: #9aa1ad; --line: #2a2e35; --bezel: #24272d; --bezel-edge: #464b54; color-scheme: dark } }
+:root[data-theme="dark"] { --bg: #0e0f12; --surface: #17191d; --ink: #eceef1; --muted: #9aa1ad; --line: #2a2e35; --bezel: #24272d; --bezel-edge: #464b54; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 15px/1.55 var(--font-body); }
+main { max-width: 980px; margin: 0 auto; padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+h1 { font-family: var(--font-display); font-size: clamp(34px, 6vw, 52px); line-height: 1; margin: 0; text-transform: uppercase; letter-spacing: .01em; text-wrap: balance; }
+h1 span { color: var(--accent); }
+.lede { color: var(--muted); max-width: 62ch; margin: 8px 0 0; }
+.watches { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 28px; justify-items: center; }
+figure { margin: 0; display: grid; gap: 12px; justify-items: center; width: 100%; }
+.bezel { width: min(100%, 380px); aspect-ratio: 1; border-radius: 50%; background: var(--bezel); padding: 4.5%; box-sizing: border-box;
+  box-shadow: inset 0 0 0 2px var(--bezel-edge), 0 18px 40px rgba(0,0,0,.25); position: relative; max-width: 100%; }
+.bezel::before, .bezel::after { content: ""; position: absolute; width: 4%; height: 9%; background: var(--bezel-edge); border-radius: 3px; right: -2.2%; }
+.bezel::before { top: 24%; } .bezel::after { top: 62%; }
+canvas { width: 100%; height: 100%; border-radius: 50%; display: block; background: #000; }
+figcaption { text-align: center; }
+figcaption b { font-family: var(--font-display); font-size: 20px; text-transform: uppercase; letter-spacing: .04em; display: block; }
+figcaption span { color: var(--muted); font-size: 14px; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+button { font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 8px 16px; cursor: pointer; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.specs { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; border-top: 2px solid var(--ink); }
+.spec { padding: 14px 16px 14px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.spec .k { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.spec .v { font-family: var(--font-display); font-size: 22px; font-weight: 600; }
+.spec p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .note-motion { display: block; } }
+.note-motion { display: none; color: var(--muted); font-size: 14px; text-align: center; }
+</style>
+
+<main>
+  <header>
+    <h1>Pull-Up <span>Watch Face</span></h1>
+    <p class="lede">Forerunner 265 · 416 × 416 AMOLED. Raise your wrist and the lifter does a rep; the lats and traps glow as they contract. When the watch dims, it drops to a low-power face with just the time.</p>
+  </header>
+
+  <section class="watches" aria-label="Watch face preview">
+    <figure>
+      <div class="bezel"><canvas id="active" width="416" height="416" aria-label="Active watch face with pull-up animation"></canvas></div>
+      <figcaption><b>Active</b><span>About 10 s after a wrist raise or button press</span></figcaption>
+    </figure>
+    <figure>
+      <div class="bezel"><canvas id="aod" width="416" height="416" aria-label="Always-on low-power watch face"></canvas></div>
+      <figcaption><b>Always-on</b><span>Under 10% of pixels lit, nudged each minute against burn-in</span></figcaption>
+    </figure>
+  </section>
+
+  <div class="controls" role="group" aria-label="Preview controls">
+    <button id="play" aria-pressed="true">Pause animation</button>
+    <button id="data" aria-pressed="true">Hide data</button>
+  </div>
+  <p class="note-motion">Your system asks for reduced motion, so the preview starts paused. Press play to see the rep.</p>
+
+  <section class="specs" aria-label="Design details">
+    <div class="spec"><div class="k">Animation</div><div class="v">48 frames · 20 fps</div><p>One 2.4 s rep, looped while the watch is active. Original artwork, so it can be published.</p></div>
+    <div class="spec"><div class="k">Background</div><div class="v">Pure black</div><p>Black AMOLED pixels are off, which saves battery and lets the figure float.</p></div>
+    <div class="spec"><div class="k">Data</div><div class="v">Date · time · HR · steps · battery</div><p>Sample values in this preview. Any of them can be swapped or removed.</p></div>
+    <div class="spec"><div class="k">Built with</div><div class="v">Connect IQ · Monkey C</div><p>Animation converted with Garmin's Monkey Motion tool and played by an animation layer.</p></div>
+  </section>
+</main>
+
+<script>
+/* ---------- The lifter: an original, procedurally drawn figure seen from behind ---------- */
+const ease = (x) => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+/* Rep timeline over one cycle u in [0,1): pull 0–.38, hold .38–.46, lower .46–.92, dead hang .92–1 */
+function repPhase(u) {
+  if (u < .38) return ease(u / .38);
+  if (u < .46) return 1;
+  if (u < .92) return 1 - ease((u - .46) / .46);
+  return 0;
+}
+function ik(S, H, L1, L2, side) {
+  const dx = H.x - S.x, dy = H.y - S.y; let d = Math.hypot(dx, dy);
+  d = Math.min(d, L1 + L2 - .01);
+  const a = Math.acos((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d));
+  const base = Math.atan2(dy, dx);
+  const ang = base + side * a; // bend the elbow outward, away from the body
+  return { x: S.x + L1 * Math.cos(ang), y: S.y + L1 * Math.sin(ang) };
+}
+function drawPullup(ctx, p, box, opt = {}) {
+  // box: {x, y, s} draws the 200-unit figure scaled by s/200 with its top-left at x,y
+  const k = box.s / 200; ctx.save(); ctx.translate(box.x, box.y); ctx.scale(k, k);
+  const skin = opt.skin || "#d8dbe0", shade = "#8f949c", dark = "#5d626a";
+  const red = (a) => `rgba(229,64,47,${a})`;
+  const glow = .45 + .45 * p;
+  const L1 = 30, L2 = 29, barY = 34;
+  const H = [{ x: 68, y: barY }, { x: 132, y: barY }];
+  const hangY = barY + Math.sqrt(Math.pow(L1 + L2 - 1.5, 2) - 36);
+  const sy = hangY + (58 - hangY) * p;              // shoulder height
+  const sway = Math.sin(p * Math.PI) * 1.2;
+  const S = [{ x: 72 + sway * .2, y: sy }, { x: 128 + sway * .2, y: sy }];
+
+  // bar and uprights
+  ctx.fillStyle = "#8b9097"; ctx.fillRect(18, barY - 3, 164, 6);
+  ctx.fillStyle = "#c9ccd1"; ctx.fillRect(12, barY - 12, 9, 26); ctx.fillRect(179, barY - 12, 9, 26);
+
+  const limb = (a, b, w, color) => { ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
+  const E = [ik(S[0], H[0], L1, L2, 1), ik(S[1], H[1], L1, L2, -1)];
+
+  // legs: knees bent, ankles crossed behind (drawn first, under the torso)
+  const hipY = sy + 54, kneeY = hipY + 26 + 2 * (1 - p), footY = kneeY + 19;
+  const legSwing = Math.sin(p * Math.PI) * 3;
+  const legs = [[{ x: 90, y: hipY }, { x: 88 - legSwing, y: kneeY }, { x: 104, y: footY }], [{ x: 110, y: hipY }, { x: 112 + legSwing, y: kneeY }, { x: 95, y: footY + 3 }]];
+  legs.forEach(([hp, kn, ft]) => { limb(hp, kn, 15, skin); limb(kn, ft, 11, shade); limb(hp, kn, 3, "rgba(0,0,0,.18)"); });
+  // forearms then upper arms
+  [0, 1].forEach(i => { limb(E[i], H[i], 8.5, skin); limb(S[i], E[i], 11, skin); limb(S[i], E[i], 7, red(.35 + .35 * p)); });
+  // hands
+  ctx.fillStyle = skin; H.forEach(h => { ctx.beginPath(); ctx.ellipse(h.x, h.y + 1, 5, 4.5, 0, 0, Math.PI * 2); ctx.fill(); });
+
+  // torso: V-taper from shoulders to waist
+  const waistY = sy + 46;
+  ctx.fillStyle = skin; ctx.beginPath();
+  ctx.moveTo(S[0].x - 5, sy - 3); ctx.lineTo(S[1].x + 5, sy - 3);
+  ctx.lineTo(S[1].x + 2, sy + 12); ctx.quadraticCurveTo(S[1].x - 2, sy + 30, 113, waistY); ctx.lineTo(115, hipY + 2);
+  ctx.lineTo(85, hipY + 2); ctx.lineTo(87, waistY); ctx.quadraticCurveTo(S[0].x + 2, sy + 30, S[0].x - 2, sy + 12); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,.18)"; ctx.lineWidth = 1; ctx.stroke();
+  // lats
+  ctx.fillStyle = red(glow);
+  [-1, 1].forEach(sd => { ctx.beginPath(); ctx.moveTo(100 + sd * 25, sy + 8); ctx.quadraticCurveTo(100 + sd * 26, sy + 24, 100 + sd * 12, waistY - 3);
+    ctx.lineTo(100 + sd * 6, sy + 34); ctx.lineTo(100 + sd * 8, sy + 16); ctx.quadraticCurveTo(100 + sd * 16, sy + 9, 100 + sd * 25, sy + 8); ctx.fill(); });
+  // trapezius
+  ctx.fillStyle = red(Math.min(1, glow + .05)); ctx.beginPath();
+  ctx.moveTo(100, sy - 13); ctx.lineTo(S[1].x - 6, sy - 1); ctx.lineTo(108, sy + 6); ctx.lineTo(100, sy + 20); ctx.lineTo(92, sy + 6); ctx.lineTo(S[0].x + 6, sy - 1); ctx.closePath(); ctx.fill();
+  // rear delts
+  ctx.fillStyle = red(.4 + .4 * p); S.forEach(s => { ctx.beginPath(); ctx.ellipse(s.x, s.y + 2, 7, 6, 0, 0, Math.PI * 2); ctx.fill(); });
+  // spine and lower-back definition
+  ctx.strokeStyle = "rgba(0,0,0,.28)"; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(100, sy + 4); ctx.lineTo(100, hipY - 2); ctx.stroke();
+  ctx.strokeStyle = "rgba(0,0,0,.14)"; ctx.beginPath(); ctx.moveTo(95, waistY - 6); ctx.lineTo(94, hipY - 4); ctx.moveTo(105, waistY - 6); ctx.lineTo(106, hipY - 4); ctx.stroke();
+  // shorts
+  ctx.fillStyle = "#111214"; ctx.fillRect(83, hipY - 4, 34, 15); ctx.strokeStyle = "#3b3f46"; ctx.lineWidth = 1; ctx.strokeRect(83.5, hipY - 3.5, 33, 14);
+  // neck and head (from behind)
+  ctx.fillStyle = skin; ctx.fillRect(95, sy - 22, 10, 12);
+  ctx.beginPath(); ctx.ellipse(100, sy - 28, 10.5, 12.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(100, sy - 32, 10.5, 9, 0, Math.PI, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(100, sy - 31, 10.5, 6, 0, 0, Math.PI); ctx.fill();
+  ctx.restore();
+}
+
+/* ---------- Watch faces ---------- */
+const SAMPLE = { hr: 58, steps: "8,432", battery: 76 };
+const DAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"], MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+let showData = true;
+function drawActive(ctx, p) {
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 416, 416);
+  drawPullup(ctx, p, { x: 88, y: 18, s: 240 });
+  const now = new Date();
+  ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+  ctx.font = "600 92px 'Barlow Condensed', 'Arial Narrow', sans-serif";
+  ctx.fillText(`${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`, 208, 322);
+  ctx.font = "600 24px 'Barlow Condensed', 'Arial Narrow', sans-serif"; ctx.fillStyle = "#e5402f";
+  ctx.fillText(`${DAYS[now.getDay()]} ${now.getDate()} ${MONTHS[now.getMonth()]}`, 208, 230 + 12);
+  if (!showData) return;
+  ctx.font = "600 24px 'Barlow Condensed', 'Arial Narrow', sans-serif";
+  const row = [["♥", SAMPLE.hr, "#e5402f"], ["👟", SAMPLE.steps, "#c9ccd1"], ["▮", SAMPLE.battery + "%", "#7bd88f"]];
+  const xs = [128, 208, 288];
+  row.forEach(([ic, v, c], i) => { ctx.fillStyle = c; ctx.font = "20px sans-serif"; ctx.fillText(ic, xs[i], 360);
+    ctx.fillStyle = "#e9ebee"; ctx.font = "600 24px 'Barlow Condensed', 'Arial Narrow', sans-serif"; ctx.fillText(v, xs[i], 386); });
+}
+function drawAod(ctx) {
+  ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 416, 416);
+  const now = new Date(), m = now.getMinutes(), dx = (m % 5) * 3 - 6, dy = (m % 3) * 3 - 3;
+  ctx.textAlign = "center"; ctx.strokeStyle = "#9aa0a8"; ctx.lineWidth = 2;
+  ctx.font = "600 92px 'Barlow Condensed', 'Arial Narrow', sans-serif";
+  ctx.strokeText(`${now.getHours()}:${String(m).padStart(2, "0")}`, 208 + dx, 240 + dy);
+  ctx.fillStyle = "#7a2219"; ctx.font = "600 22px 'Barlow Condensed', 'Arial Narrow', sans-serif";
+  ctx.fillText(`${DAYS[now.getDay()]} ${now.getDate()}`, 208 + dx, 150 + dy);
+}
+
+const A = document.getElementById("active").getContext("2d"), B = document.getElementById("aod").getContext("2d");
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let playing = !reduce, t0 = performance.now(), held = 0;
+const playBtn = document.getElementById("play");
+playBtn.setAttribute("aria-pressed", String(playing)); playBtn.textContent = playing ? "Pause animation" : "Play animation";
+function frame(now) {
+  const u = playing ? ((now - t0) / 2400) % 1 : held;
+  if (playing) held = u;
+  drawActive(A, repPhase(u));
+  requestAnimationFrame(frame);
+}
+playBtn.onclick = () => { playing = !playing; if (playing) t0 = performance.now() - held * 2400;
+  playBtn.setAttribute("aria-pressed", String(playing)); playBtn.textContent = playing ? "Pause animation" : "Play animation"; };
+const dataBtn = document.getElementById("data");
+dataBtn.onclick = () => { showData = !showData; dataBtn.setAttribute("aria-pressed", String(showData)); dataBtn.textContent = showData ? "Hide data" : "Show data"; };
+if (reduce) held = .4;
+drawAod(B); setInterval(() => drawAod(B), 30000);
+document.fonts?.ready.then(() => drawAod(B));
+requestAnimationFrame(frame);
+window.drawPullup = drawPullup; window.repPhase = repPhase;
+</script>
