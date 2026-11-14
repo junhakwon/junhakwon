@@ -131,6 +131,13 @@ button:focus-visible, select:focus-visible { outline: 3px solid var(--brand); ou
 .done .stars { font-size: 34px; }
 .missed { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .muted { color: var(--muted); }
+a { color: var(--brand); }
+a.chip { text-decoration: none; color: var(--ink); }
+.vids { border-top: 1px solid var(--line); padding-top: 8px; }
+.vids summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+.vids summary .lao { color: var(--brand); }
+.vids ul { margin: 6px 0 4px; padding-left: 4px; list-style: none; display: grid; gap: 6px; font-size: 15px; }
+.vids a { overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
@@ -186,6 +193,18 @@ const UNITS = [
     { t: "ໂຊກດີ", ro: "sok di", pic: "👋🍀", en: "Goodbye (good luck)", ex: "ໂຊກດີເດີ", exro: "sok di doe", exen: "Take care!" },
     { t: "ລາຕີສະຫວັດ", ro: "latisawat", pic: "🌙", en: "Good night" } ] },
 ];
+/* Native-speaker videos found on YouTube for each unit (titles as published there; opened in a new tab). */
+const VIDEOS = {
+  people: [{ id: "vp_sjFD7flA", title: "Learn Lao language 101: Vocabulary 800, Lesson 6" }, { id: "q_dwNL_4pIk", title: "Learn Lao language 101: Vocabulary 800, Lesson 2" }],
+  food: [{ id: "mHI_oCq5q_s", title: "Learn Lao: how to describe food flavor" }, { id: "9DjhpE2byOU", title: "Learn Lao Language, Lesson 77: ordering food" }],
+  actions: [{ id: "mjjxCGIID6M", title: "Spoken Lao Reading and Listening, Lesson 10" }],
+  colours: [],
+  numbers: [{ id: "KgFYM7t9iBY", title: "Numbers in Lao language for beginners" }, { id: "qxyRQMKr3HM", title: "Learn Lao numbers" }, { id: "Z-cONN-zhLQ", title: "Laos Basics, Lesson 1: hello, goodbye, numbers" }],
+  phrases: [{ id: "yTbojOD5n-g", title: "Learn to read and speak Lao: sabaidee" }, { id: "HC3jLEfclxk", title: "Learn to read and speak Lao: khawb jai (thank you)" }, { id: "j7TToA_jaMg", title: "Learn to read and speak Lao: greetings" }, { id: "fqun3myQdgM", title: "Basic Greeting in Lao (Lao101)" }, { id: "Z4z6EjBiuKw", title: "Lesson 1: Lao greeting words and phrases" }],
+};
+const SEARCH = { people: "Lao words family people animals", food: "Lao food vocabulary", actions: "Lao verbs eat drink sleep", colours: "colors in Lao language", numbers: "Lao numbers classifiers", phrases: "Lao greetings phrases" };
+const ytSearch = (q) => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
+const ytWord = (it) => ytSearch(`${it.t} ${it.ro} Lao pronunciation`);
 const ALL = UNITS.flatMap(u => u.items.map(it => ({ ...it, unit: u.id })));
 const find = (t) => ALL.find(x => x.t === t);
 const BOX_DAYS = [0, 0, 1, 3, 7, 16];
@@ -354,7 +373,22 @@ function renderHome() {
     units.append(b);
   });
   app.append(units);
+  renderVideos();
   renderSettings();
+}
+
+function renderVideos() {
+  const p = $(`<section class="panel"><div class="label">Native speakers on YouTube</div>
+    <p>Hear real Lao voices for each unit. Videos open on YouTube in a new tab.</p></section>`);
+  UNITS.forEach(u => {
+    const vids = VIDEOS[u.id] || [];
+    const d = $(`<details class="vids"><summary><span class="lao">${esc(u.lao)}</span> · ${esc(u.title)} <span class="muted">(${vids.length ? vids.length + " video" + (vids.length > 1 ? "s" : "") : "search"})</span></summary>
+      <ul>${vids.map(v => `<li><a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener">▶ ${esc(v.title)}</a></li>`).join("")}
+      <li><a href="${ytSearch(SEARCH[u.id])}" target="_blank" rel="noopener">🔎 Search YouTube for more: “${esc(SEARCH[u.id])}”</a></li></ul></details>`);
+    p.append(d);
+  });
+  p.append($(`<p class="note">Channels with whole beginner series: <a href="https://www.youtube.com/@Lao101/videos" target="_blank" rel="noopener">#Lao101</a>.</p>`));
+  app.append(p);
 }
 
 function renderSettings() {
@@ -420,7 +454,7 @@ function finish(ok, item, extra) {
   const foot = app.querySelector(".foot"); foot.innerHTML = "";
   const sheet = $(`<div class="sheet ${ok ? "ok" : "no"}" role="status"><div>
     <b>${ok ? `<span class="lao">ຖືກຕ້ອງ!</span> Correct` : "Not quite"}</b>
-    ${ok ? "" : `<span class="ans">${laoHtml(item.t, item.ro)}</span>${extra ? `<span class="tr-note">${esc(extra)}</span>` : ""}`}
+    ${ok ? "" : `<span class="ans">${laoHtml(item.t, item.ro)}</span>${extra ? `<span class="tr-note">${esc(extra)}</span>` : ""}<a class="tr-note" href="${ytWord(item)}" target="_blank" rel="noopener">▶ Hear it on YouTube</a>`}
     ${note ? `<span class="tr-note">${esc(note)}</span>` : ""}</div><button class="go">Continue</button></div>`);
   sheet.querySelector("button").onclick = next;
   foot.append(sheet); sheet.querySelector("button").focus();
@@ -435,7 +469,7 @@ function renderStep() {
     const h = $(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div>
       <div class="target">${laoHtml(it.t, it.ro)}</div>
       ${it.ex ? `<button class="chip ex-btn" ${canSpeak() ? "" : "disabled"}><span class="lao">${esc(it.ex)}</span>${S.roman ? ` <span class="ro">${esc(it.exro)}</span>` : ""}</button>` : ""}
-      ${speakRow(it)}<button class="chip" id="hint">Show meaning</button></div>`);
+      ${speakRow(it)}<div class="speak-row"><a class="chip yt" href="${ytWord(it)}" target="_blank" rel="noopener">▶ Hear a native speaker</a><button class="chip" id="hint">Show meaning</button></div></div>`);
     h.querySelector("#hint").onclick = (e) => { e.target.outerHTML = `<span class="hint">${esc(it.en)}${it.exen ? ` · ${esc(it.exen)}` : ""}</span>`; };
     wireSpeak(h, it); stage.append(h);
     const go = $(`<button class="go wide">Next</button>`); go.onclick = next; foot.append(go);
