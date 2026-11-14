@@ -2,10 +2,8 @@ name: Sign Shortcuts
 
 # Shortcut Creator: 서명 안 된 *.unsigned.shortcut 을 macOS `shortcuts sign` 으로 서명하고
 # 결과(*.shortcut)와 로그(*.sign.log)를 같은 브랜치에 커밋한다.
+# 2026-11-14: CI 러너에는 iCloud 로그인이 없어 서명 실패 확인 → 자동 실행 끔 (수동 실행만)
 on:
-  push:
-    paths:
-      - "Shortcut Creator/shortcuts/**/*.unsigned.shortcut"
   workflow_dispatch:
 
 permissions:
