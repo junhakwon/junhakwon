@@ -1,0 +1,562 @@
+<title>Sabaidi</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible:wght@400;700&family=Noto+Sans+Lao+Looped:wght@400;600;700&display=swap">
+<style>
+/* Layout: one centred column; an indigo header plate like a Vientiane street sign, picture cards on a cool paper ground, Lao script always paired with its romanization. */
+:root {
+  --bg: #f3f4f8; --surface: #ffffff; --ink: #161a33; --muted: #59607f;
+  --brand: #22378f; --brand-ink: #ffffff; --accent: #c8283c; --line: #dadeec; --tile: #e8ebf6;
+  --good: #17805a; --good-bg: #dcf3e8; --bad: #b9352a; --bad-bg: #fbe3df; --gold: #b7860b;
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-lao: "Noto Sans Lao Looped", "Noto Sans Lao", "Lao Sangam MN", "Phetsarath OT", sans-serif;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0d1023; --surface: #161a35; --ink: #eceefa; --muted: #9da3c6;
+  --brand: #7d93ff; --brand-ink: #0d1023; --accent: #ff6b7c; --line: #2a3055; --tile: #20264a;
+  --good: #46c890; --good-bg: #133a2b; --bad: #ff7f6b; --bad-bg: #42201b; --gold: #f0c24b; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0d1023; --surface: #161a35; --ink: #eceefa; --muted: #9da3c6;
+  --brand: #7d93ff; --brand-ink: #0d1023; --accent: #ff6b7c; --line: #2a3055; --tile: #20264a;
+  --good: #46c890; --good-bg: #133a2b; --bad: #ff7f6b; --bad-bg: #42201b; --gold: #f0c24b; color-scheme: dark }
+
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 17px/1.5 var(--font-body); }
+#app { max-width: 640px; margin: 0 auto; padding-block: 20px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 18px; min-height: 100%; box-sizing: border-box; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+button, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+.lao { font-family: var(--font-lao); line-height: 1.6; }
+.ro { font-family: var(--font-body); color: var(--muted); font-style: italic; }
+.label { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+
+.plate { background: var(--brand); color: var(--brand-ink); border-radius: var(--r); padding: 18px 20px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; border-bottom: 6px solid var(--accent); }
+.plate .lao { font-size: 36px; font-weight: 700; line-height: 1.3; }
+.plate h1 { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; opacity: .9; }
+.plate p { margin: 6px 0 0; opacity: .88; font-size: 15px; max-width: 34ch; }
+.stats { display: flex; gap: 16px; font-variant-numeric: tabular-nums; }
+.stat b { display: block; font-family: var(--font-display); font-size: 22px; line-height: 1.1; }
+.stat span { font-size: 12px; opacity: .85; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: grid; gap: 10px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.panel-head > div { min-width: 0; flex: 1 1 240px; }
+.panel p { margin: 2px 0 0; color: var(--muted); font-size: 15px; }
+
+.units { display: grid; gap: 10px; }
+.unit { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 14px; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; }
+.unit .pic { font-size: 34px; width: 64px; height: 64px; display: grid; place-items: center; background: var(--tile); border-radius: 12px; }
+.unit h3 { font-size: 19px; }
+.unit .lao { font-size: 15px; color: var(--brand); }
+.unit .sub { color: var(--muted); font-size: 14px; }
+.stars { font-size: 15px; color: var(--gold); letter-spacing: 2px; white-space: nowrap; }
+.stars .off { color: var(--line); }
+
+.topbar { display: flex; align-items: center; gap: 12px; }
+.icon-btn { background: none; border: 1px solid var(--line); border-radius: 999px; width: 40px; height: 40px; display: grid; place-items: center; flex: none; }
+.bar { flex: 1; height: 10px; background: var(--tile); border-radius: 999px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--brand); border-radius: 999px; transition: width .3s ease; }
+.stage { display: flex; flex-direction: column; gap: 16px; flex: 1; }
+.prompt { font-family: var(--font-display); font-size: 15px; color: var(--muted); font-weight: 500; }
+.prompt .lao { font-size: 15px; }
+.hero { display: grid; place-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 22px 16px; text-align: center; }
+.hero .big { font-size: clamp(64px, 20vw, 110px); line-height: 1.1; }
+.hero .target { font-size: clamp(30px, 9vw, 44px); font-weight: 700; }
+.hero .ro { font-size: 19px; }
+.hero .ex { font-size: 18px; }
+.hero .hint { color: var(--muted); font-size: 14px; }
+.speak-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 8px 14px; font-size: 15px; }
+.chip.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.listen-big { width: 120px; height: 120px; border-radius: 50%; border: none; background: var(--brand); color: var(--brand-ink); font-size: 46px; }
+
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.card { background: var(--surface); border: 2px solid var(--line); border-radius: var(--r); padding: 14px 8px;
+  display: grid; place-items: center; align-content: center; gap: 2px; min-height: 110px; font-size: clamp(42px, 12vw, 62px); line-height: 1.15; transition: transform .1s; }
+.card.text { font-size: 24px; font-weight: 700; min-height: 84px; padding: 10px; }
+.card.text .ro { font-size: 14px; font-weight: 400; }
+.card:active { transform: scale(.97); }
+.card.ok { border-color: var(--good); background: var(--good-bg); }
+.card.no { border-color: var(--bad); background: var(--bad-bg); }
+.card:disabled { cursor: default; }
+
+.answer-line { min-height: 64px; border-bottom: 2px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding-bottom: 8px; }
+.tiles { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.tile { background: var(--surface); border: 2px solid var(--line); border-bottom-width: 4px; border-radius: 10px; padding: 4px 14px;
+  font-size: 22px; font-weight: 600; display: grid; justify-items: center; }
+.tile .ro { font-size: 12px; font-weight: 400; }
+.tile.used { visibility: hidden; }
+
+.mic { width: 96px; height: 96px; border-radius: 50%; border: none; background: var(--brand); color: var(--brand-ink); font-size: 38px; align-self: center; }
+.mic.on { background: var(--bad); animation: pulse 1.2s infinite; }
+@keyframes pulse { 50% { transform: scale(1.06); } }
+.heard { text-align: center; color: var(--muted); min-height: 1.5em; }
+
+.sheet { border-radius: var(--r); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.sheet.ok { background: var(--good-bg); color: var(--good); }
+.sheet.no { background: var(--bad-bg); color: var(--bad); }
+.sheet b { font-family: var(--font-display); font-size: 19px; display: block; }
+.sheet b .lao { font-size: 19px; }
+.sheet .ans { color: var(--ink); font-size: 20px; }
+.sheet .tr-note { display: block; font-size: 14px; color: var(--muted); margin-top: 2px; }
+.go { border: none; border-radius: 12px; padding: 14px 22px; background: var(--brand); color: var(--brand-ink); font-weight: 700; font-size: 17px; }
+.go.wide { width: 100%; }
+.go.soft { background: var(--tile); color: var(--ink); }
+.go:disabled { opacity: .45; cursor: default; }
+.foot { margin-top: auto; display: grid; gap: 12px; }
+
+.tricky-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.tw { width: 100%; display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; text-align: left;
+  background: var(--bad-bg); border: 1px solid transparent; border-radius: 12px; padding: 8px 10px; }
+.tw-pic { grid-row: span 3; font-size: 26px; }
+.tw .lao { font-weight: 700; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.tw .ro { font-size: 13px; }
+.tw-meta { font-size: 12px; color: var(--bad); font-variant-numeric: tabular-nums; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.panel select { flex: 1 1 220px; min-width: 0; font-size: 15px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.switch { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.switch input { width: 20px; height: 20px; accent-color: var(--brand); }
+.note { font-size: 14px; color: var(--muted); margin: 0; }
+
+.done { text-align: center; display: grid; gap: 14px; justify-items: center; padding-top: 30px; }
+.done .big { font-size: 80px; }
+.done .stars { font-size: 34px; }
+.missed { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.muted { color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div id="app"></div>
+
+<script>
+/* ---------- Course content ----------
+   t: Lao script · ro: romanization · en: meaning (hidden behind a hint) · w: word tiles (Lao writes no spaces between words)
+   ex / exro / exen: a short natural sentence using the item */
+const UNITS = [
+  { id: "people", title: "People and animals", lao: "ຄົນ ແລະ ສັດ", pic: "🐘", items: [
+    { t: "ຜູ້ຊາຍ", ro: "phu xai", pic: "👨", en: "a man", ex: "ນີ້ແມ່ນຜູ້ຊາຍ", exro: "ni maen phu xai", exen: "This is a man." },
+    { t: "ຜູ້ຍິງ", ro: "phu nying", pic: "👩", en: "a woman", ex: "ນີ້ແມ່ນຜູ້ຍິງ", exro: "ni maen phu nying", exen: "This is a woman." },
+    { t: "ເດັກຊາຍ", ro: "dek xai", pic: "👦", en: "a boy", ex: "ເດັກຊາຍຫຼິ້ນ", exro: "dek xai lin", exen: "The boy is playing." },
+    { t: "ເດັກຍິງ", ro: "dek nying", pic: "👧", en: "a girl", ex: "ເດັກຍິງຍິ້ມ", exro: "dek nying nyim", exen: "The girl is smiling." },
+    { t: "ໝາ", ro: "ma", pic: "🐕", en: "a dog", ex: "ຂ້ອຍມີໝາ", exro: "khoy mi ma", exen: "I have a dog." },
+    { t: "ແມວ", ro: "maeo", pic: "🐈", en: "a cat", ex: "ແມວນອນ", exro: "maeo non", exen: "The cat is sleeping." },
+    { t: "ຊ້າງ", ro: "xang", pic: "🐘", en: "an elephant", ex: "ຊ້າງໃຫຍ່", exro: "xang nyai", exen: "The elephant is big." } ] },
+  { id: "food", title: "Food and drink", lao: "ອາຫານ ແລະ ເຄື່ອງດື່ມ", pic: "🍚", items: [
+    { t: "ເຂົ້າໜຽວ", ro: "khao niao", pic: "🍚", en: "sticky rice", ex: "ຂ້ອຍມັກເຂົ້າໜຽວ", exro: "khoy mak khao niao", exen: "I like sticky rice." },
+    { t: "ເຂົ້າຈີ່", ro: "khao chi", pic: "🥖", en: "bread", ex: "ເຂົ້າຈີ່ແຊບ", exro: "khao chi saep", exen: "The bread is tasty." },
+    { t: "ເຝີ", ro: "foe", pic: "🍜", en: "noodle soup", ex: "ຂໍເຝີໜຶ່ງຖ້ວຍ", exro: "kho foe nueng thuai", exen: "One bowl of noodle soup, please." },
+    { t: "ໝາກມ່ວງ", ro: "mak muang", pic: "🥭", en: "a mango", ex: "ໝາກມ່ວງຫວານ", exro: "mak muang wan", exen: "The mango is sweet." },
+    { t: "ໝາກກ້ວຍ", ro: "mak kuai", pic: "🍌", en: "a banana", ex: "ລາວກິນໝາກກ້ວຍ", exro: "lao kin mak kuai", exen: "She is eating a banana." },
+    { t: "ນ້ຳ", ro: "nam", pic: "💧", en: "water", ex: "ຂໍນ້ຳແດ່", exro: "kho nam dae", exen: "Some water, please." },
+    { t: "ກາເຟ", ro: "kafe", pic: "☕", en: "coffee", ex: "ກາເຟລາວແຊບຫຼາຍ", exro: "kafe lao saep lai", exen: "Lao coffee is really good." } ] },
+  { id: "actions", title: "Who does what?", lao: "ໃຜເຮັດຫຍັງ", pic: "🏃", items: [
+    { t: "ລາວກິນເຂົ້າ", ro: "lao kin khao", w: ["ລາວ", "ກິນ", "ເຂົ້າ"], wro: ["lao", "kin", "khao"], pic: "🧑🍚", en: "He is eating", ex: "ລາວກິນເຂົ້າໜຽວ", exro: "lao kin khao niao", exen: "He is eating sticky rice." },
+    { t: "ລາວດື່ມນ້ຳ", ro: "lao duem nam", w: ["ລາວ", "ດື່ມ", "ນ້ຳ"], wro: ["lao", "duem", "nam"], pic: "👩💧", en: "She is drinking water" },
+    { t: "ລາວອ່ານປຶ້ມ", ro: "lao an puem", w: ["ລາວ", "ອ່ານ", "ປຶ້ມ"], wro: ["lao", "an", "puem"], pic: "👧📖", en: "She is reading a book" },
+    { t: "ລາວແລ່ນ", ro: "lao laen", w: ["ລາວ", "ແລ່ນ"], wro: ["lao", "laen"], pic: "🏃‍♂️", en: "He is running" },
+    { t: "ລາວນອນ", ro: "lao non", w: ["ລາວ", "ນອນ"], wro: ["lao", "non"], pic: "🧑💤", en: "He is sleeping" },
+    { t: "ໝາລອຍນ້ຳ", ro: "ma loi nam", w: ["ໝາ", "ລອຍນ້ຳ"], wro: ["ma", "loi nam"], pic: "🐕🌊", en: "The dog is swimming" } ] },
+  { id: "colours", title: "Colours", lao: "ສີ", pic: "🎨", items: [
+    { t: "ສີແດງ", ro: "si daeng", pic: "🔴", en: "red", ex: "ດອກໄມ້ສີແດງ", exro: "dok mai si daeng", exen: "a red flower" },
+    { t: "ສີຟ້າ", ro: "si fa", pic: "🔵", en: "blue", ex: "ທ້ອງຟ້າສີຟ້າ", exro: "thong fa si fa", exen: "The sky is blue." },
+    { t: "ສີຂຽວ", ro: "si khiao", pic: "🟢", en: "green", ex: "ໃບໄມ້ສີຂຽວ", exro: "bai mai si khiao", exen: "The leaves are green." },
+    { t: "ສີເຫຼືອງ", ro: "si lueang", pic: "🟡", en: "yellow" },
+    { t: "ໝາກມ່ວງສີເຫຼືອງ", ro: "mak muang si lueang", w: ["ໝາກມ່ວງ", "ສີ", "ເຫຼືອງ"], wro: ["mak muang", "si", "lueang"], pic: "🥭", en: "The mango is yellow" },
+    { t: "ໝາກແຕງສີຂຽວ", ro: "mak taeng si khiao", w: ["ໝາກແຕງ", "ສີ", "ຂຽວ"], wro: ["mak taeng", "si", "khiao"], pic: "🥒", en: "The cucumber is green" } ] },
+  { id: "numbers", title: "Counting", lao: "ນັບເລກ", pic: "🔢", items: [
+    { t: "ແມວໜຶ່ງໂຕ", ro: "maeo nueng to", w: ["ແມວ", "ໜຶ່ງ", "ໂຕ"], wro: ["maeo", "nueng", "to"], pic: "🐈", en: "one cat" },
+    { t: "ແມວສອງໂຕ", ro: "maeo song to", w: ["ແມວ", "ສອງ", "ໂຕ"], wro: ["maeo", "song", "to"], pic: "🐈🐈", en: "two cats" },
+    { t: "ໝາສາມໂຕ", ro: "ma sam to", w: ["ໝາ", "ສາມ", "ໂຕ"], wro: ["ma", "sam", "to"], pic: "🐕🐕🐕", en: "three dogs" },
+    { t: "ໝາກມ່ວງສີ່ໜ່ວຍ", ro: "mak muang si nuai", w: ["ໝາກມ່ວງ", "ສີ່", "ໜ່ວຍ"], wro: ["mak muang", "si", "nuai"], pic: "🥭🥭🥭🥭", en: "four mangoes" },
+    { t: "ໝາກກ້ວຍຫ້າໜ່ວຍ", ro: "mak kuai ha nuai", w: ["ໝາກກ້ວຍ", "ຫ້າ", "ໜ່ວຍ"], wro: ["mak kuai", "ha", "nuai"], pic: "🍌🍌🍌🍌🍌", en: "five bananas" } ] },
+  { id: "phrases", title: "Everyday phrases", lao: "ສະບາຍດີ", pic: "🙏", items: [
+    { t: "ສະບາຍດີ", ro: "sabaidi", pic: "👋🙂", en: "Hello", ex: "ສະບາຍດີ, ສະບາຍດີບໍ?", exro: "sabaidi, sabaidi bo?", exen: "Hello, how are you?" },
+    { t: "ຂອບໃຈ", ro: "khop chai", pic: "🙏", en: "Thank you", ex: "ຂອບໃຈຫຼາຍໆ", exro: "khop chai lai lai", exen: "Thank you very much." },
+    { t: "ຂໍໂທດ", ro: "kho thot", pic: "🙇", en: "Sorry / excuse me" },
+    { t: "ແມ່ນ", ro: "maen", pic: "👍", en: "Yes (that's right)" },
+    { t: "ບໍ່", ro: "bo", pic: "👎", en: "No", ex: "ບໍ່ເປັນຫຍັງ", exro: "bo pen nyang", exen: "No problem. It's okay." },
+    { t: "ໂຊກດີ", ro: "sok di", pic: "👋🍀", en: "Goodbye (good luck)", ex: "ໂຊກດີເດີ", exro: "sok di doe", exen: "Take care!" },
+    { t: "ລາຕີສະຫວັດ", ro: "latisawat", pic: "🌙", en: "Good night" } ] },
+];
+const ALL = UNITS.flatMap(u => u.items.map(it => ({ ...it, unit: u.id })));
+const find = (t) => ALL.find(x => x.t === t);
+const BOX_DAYS = [0, 0, 1, 3, 7, 16];
+const CLEAR_AFTER = 3;
+
+/* ---------- Progress, kept in this browser ---------- */
+const KEY = "sabaidi-v1";
+let S = { best: {}, srs: {}, miss: {}, xp: 0, streak: { day: "", n: 0 }, voice: "auto", roman: true };
+try { const raw = localStorage.getItem(KEY); if (raw) S = { ...S, ...JSON.parse(raw) }; } catch (e) {}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+const today = () => new Date().toISOString().slice(0, 10);
+function bumpStreak() {
+  const t = today(); if (S.streak.day === t) return;
+  const y = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  S.streak = { day: t, n: S.streak.day === y ? S.streak.n + 1 : 1 };
+}
+function grade(t, ok) {
+  const r = S.srs[t] || { box: 0, due: 0 };
+  r.box = ok ? Math.min(r.box + 1, 5) : 1;
+  r.due = Date.now() + BOX_DAYS[r.box] * 864e5;
+  S.srs[t] = r;
+}
+function trackMiss(t, ok) {
+  const m = S.miss[t];
+  if (!ok) { S.miss[t] = { n: (m ? m.n : 0) + 1, streak: 0, last: Date.now() }; return "added"; }
+  if (!m) return null;
+  m.streak++;
+  if (m.streak >= CLEAR_AFTER) { delete S.miss[t]; return "cleared"; }
+  return "progress";
+}
+const dueItems = () => ALL.filter(it => S.srs[it.t] && S.srs[it.t].due <= Date.now());
+const trickyItems = () => Object.entries(S.miss).sort((a, b) => b[1].n - a[1].n || b[1].last - a[1].last)
+  .map(([t, m]) => { const it = find(t); return it ? { ...it, m } : null; }).filter(Boolean);
+
+/* ---------- Voice: a Lao voice if this device or Claude has one ---------- */
+let tts = null, ttsLao = false, dict = null;
+window.claude?.use?.("tts").then(async t => {
+  tts = t; if (!t) return;
+  const langs = await t.languages?.().catch(() => undefined);
+  ttsLao = Array.isArray(langs) && langs.some(l => /^lo\b/i.test(l));
+  if (!L) render();
+}).catch(() => {});
+window.claude?.use?.("dictation").then(d => { dict = d; render(); }).catch(() => {});
+function laoVoices() {
+  if (!("speechSynthesis" in window)) return [];
+  return speechSynthesis.getVoices().filter(v => /^lo([-_]|$)/i.test(v.lang))
+    .sort((a, b) => (/premium|natural|neural|enhanced|google|online/i.test(b.name) ? 1 : 0) - (/premium|natural|neural|enhanced|google|online/i.test(a.name) ? 1 : 0));
+}
+function engine() {
+  const vs = laoVoices();
+  if (S.voice === "claude" && ttsLao) return { kind: "claude" };
+  const chosen = vs.find(v => v.voiceURI === S.voice);
+  if (chosen) return { kind: "browser", v: chosen };
+  if (vs[0]) return { kind: "browser", v: vs[0] };
+  if (ttsLao) return { kind: "claude" };
+  return null;
+}
+if ("speechSynthesis" in window) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => { if (!L) render(); }; }
+function say(lines, slow) {
+  lines = [].concat(lines).filter(Boolean);
+  const e = engine(); if (!e || !lines.length) return;
+  if (e.kind === "claude") {
+    tts.speak(lines.map(t => ({ text: t, language: "lo" })), { rate: slow ? 0.75 : 1, language: "lo" }).catch(() => {});
+    return;
+  }
+  speechSynthesis.cancel();
+  lines.forEach(t => { const u = new SpeechSynthesisUtterance(t); u.lang = e.v.lang; u.voice = e.v; u.rate = slow ? 0.72 : 1; speechSynthesis.speak(u); });
+}
+const canSpeak = () => !!engine();
+
+/* ---------- Helpers ---------- */
+const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstElementChild; };
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+// Lao vowel and tone marks are combining characters, so only spaces and punctuation are stripped before comparing.
+const norm = (s) => s.normalize("NFC").toLowerCase().replace(/[\s.,!?'"«»…\-ໆ]/g, "");
+function similar(a, b) {
+  a = norm(a); b = norm(b); if (!a || !b) return 0;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return 1 - d[a.length][b.length] / Math.max(a.length, b.length);
+}
+const starsHtml = (n) => `<span class="stars" aria-label="${n} of 3 stars">${"★".repeat(n)}<span class="off">${"★".repeat(3 - n)}</span></span>`;
+const starsFor = (pct) => pct >= 0.95 ? 3 : pct >= 0.8 ? 2 : pct > 0 ? 1 : 0;
+const laoHtml = (t, ro, cls = "") => `<span class="lao ${cls}">${esc(t)}</span>${S.roman && ro ? `<span class="ro">${esc(ro)}</span>` : ""}`;
+
+/* ---------- Lessons: discover in pairs, infer from pictures, then mixed practice ---------- */
+function choicesFor(item, pool, n = 4) {
+  const others = shuffle(pool.filter(p => p.t !== item.t && p.pic !== item.pic)).slice(0, n - 1);
+  return shuffle([item, ...others]);
+}
+function buildLesson(items, pool, review, perItem) {
+  const steps = [];
+  if (!review) {
+    const seen = [];
+    for (let i = 0; i < items.length; i += 2) {
+      const pair = items.slice(i, i + 2);
+      pair.forEach(it => { steps.push({ type: "discover", item: it }); seen.push(it); });
+      pair.forEach(it => steps.push({ type: seen.length > 2 ? "listen" : "read", item: it,
+        choices: choicesFor(it, seen.length > 1 ? seen : pool, Math.min(4, Math.max(2, seen.length))) }));
+    }
+  }
+  const mixed = [];
+  items.forEach(it => {
+    const kinds = ["listen", "pic2text", "speak"];
+    if (it.w && it.w.length >= 2) kinds.push("build");
+    shuffle(kinds).slice(0, perItem || (review ? 1 : 2))
+      .forEach(k => mixed.push({ type: k, item: it, choices: k === "pic2text" || k === "listen" ? choicesFor(it, pool) : null }));
+  });
+  return steps.concat(shuffle(mixed));
+}
+
+/* ---------- App ---------- */
+const app = document.getElementById("app");
+let L = null, cleanup = null;
+
+function render() {
+  if (cleanup) { cleanup(); cleanup = null; }
+  app.innerHTML = "";
+  if (!L) return renderHome();
+  if (L.i >= L.steps.length) return renderDone();
+  renderStep();
+}
+
+function renderHome() {
+  const due = dueItems().length, learned = Object.keys(S.srs).length;
+  app.append($(`<header class="plate">
+    <div><div class="lao">ສະບາຍດີ</div><h1>Sabaidi · Learn Lao</h1><p>Pictures first, the way children learn. Lao script with romanization to help you read it.</p></div>
+    <div class="stats">
+      <div class="stat"><b>${S.streak.day === today() ? S.streak.n : 0}</b><span>day streak</span></div>
+      <div class="stat"><b>${learned}</b><span>words</span></div>
+      <div class="stat"><b>${S.xp}</b><span>XP</span></div>
+    </div></header>`));
+
+  const rv = $(`<section class="panel"><div class="panel-head"><div><div class="label">Review</div>
+    <p>${due ? `${due} word${due > 1 ? "s" : ""} ready for review. Short sessions keep them in long-term memory.` : learned ? "Nothing due. Come back tomorrow, or start another unit." : "Words you learn come back here at growing intervals."}</p></div>
+    <button class="go" ${due ? "" : "disabled"}>Review ${due || ""}</button></div></section>`);
+  rv.querySelector(".go").onclick = startReview;
+  app.append(rv);
+
+  const list = trickyItems();
+  const tr = $(`<section class="panel"><div class="panel-head"><div><div class="label">Tricky words</div>
+    <p>${list.length ? `Words you got wrong. Each leaves the list after ${CLEAR_AFTER} right answers in a row.` : "Words you get wrong are kept here, with how often you missed them, until you know them."}</p></div>
+    <button class="go" ${list.length ? "" : "disabled"}>Practise ${list.length || ""}</button></div></section>`);
+  tr.querySelector(".go").onclick = startTricky;
+  if (list.length) {
+    const ul = $(`<ul class="tricky-list"></ul>`);
+    list.forEach(it => {
+      const li = $(`<li><button class="tw"><span class="tw-pic" aria-hidden="true">${it.pic}</span>${laoHtml(it.t, it.ro)}
+        <span class="tw-meta">missed ${it.m.n}× · ${it.m.streak}/${CLEAR_AFTER} right</span></button></li>`);
+      li.querySelector("button").onclick = () => say([it.t, it.ex]);
+      ul.append(li);
+    });
+    tr.append(ul);
+  }
+  app.append(tr);
+
+  const units = $(`<section class="units" aria-label="Units"></section>`);
+  UNITS.forEach((u, idx) => {
+    const b = $(`<button class="unit"><span class="pic" aria-hidden="true">${u.pic}</span>
+      <span><span class="lao">${esc(u.lao)}</span><h3>${idx + 1}. ${esc(u.title)}</h3><span class="sub">${u.items.length} words</span></span>
+      ${starsHtml(starsFor(S.best[u.id] || 0))}</button>`);
+    b.onclick = () => startUnit(u);
+    units.append(b);
+  });
+  app.append(units);
+  renderSettings();
+}
+
+function renderSettings() {
+  const vs = laoVoices();
+  const has = canSpeak();
+  const p = $(`<section class="panel"><div class="label">Sound and reading</div>
+    <label class="switch"><input type="checkbox" id="roman" ${S.roman ? "checked" : ""}> Show romanization under Lao script</label>
+    ${vs.length || ttsLao ? `<div class="row"><select id="voice-pick" aria-label="Lao voice">
+        <option value="auto">Automatic</option>${ttsLao ? `<option value="claude">Claude voice</option>` : ""}
+        ${vs.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)}</option>`).join("")}</select>
+        <button class="chip primary" id="voice-test">🔊 Test</button></div>`
+      : `<p class="note"><b>No Lao voice on this device yet.</b> iPhones, Android phones and desktop browsers usually don't include a Lao text-to-speech voice, so lessons run on pictures, Lao script and romanization, and the listening exercises become reading exercises. If a Lao voice becomes available here, Sabaidi uses it automatically.</p>`}
+  </section>`);
+  p.querySelector("#roman").onchange = (e) => { S.roman = e.target.checked; save(); };
+  const sel = p.querySelector("#voice-pick");
+  if (sel) {
+    sel.value = [...sel.options].some(o => o.value === S.voice) ? S.voice : "auto";
+    sel.onchange = () => { S.voice = sel.value; save(); say(["ສະບາຍດີ", "ຂອບໃຈຫຼາຍໆ"]); };
+    p.querySelector("#voice-test").onclick = () => say(["ສະບາຍດີ", "ຂອບໃຈຫຼາຍໆ"]);
+  }
+  app.append(p);
+  if (!has) return;
+}
+
+function startUnit(u) { L = { unit: u, steps: buildLesson(u.items, u.items, false), i: 0, right: 0, total: 0, missed: new Set() }; render(); }
+function startReview() {
+  const items = shuffle(dueItems()).slice(0, 12); if (!items.length) return;
+  const pool = ALL.filter(it => S.srs[it.t]);
+  L = { unit: null, kind: "Review", steps: buildLesson(items, pool.length >= 4 ? pool : ALL, true), i: 0, right: 0, total: 0, missed: new Set() }; render();
+}
+function startTricky() {
+  const items = trickyItems().slice(0, 10).map(({ m, ...it }) => it); if (!items.length) return;
+  L = { unit: null, kind: "Tricky words", steps: buildLesson(items, ALL, true, 2), i: 0, right: 0, total: 0, missed: new Set() }; render();
+}
+
+function chrome() {
+  const pct = Math.round((L.i / L.steps.length) * 100);
+  const top = $(`<div class="topbar"><button class="icon-btn" aria-label="Leave lesson">✕</button>
+    <div class="bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div></div>`);
+  top.querySelector("button").onclick = () => { L = null; render(); };
+  app.append(top);
+  const stage = $(`<main class="stage"></main>`); app.append(stage); return stage;
+}
+function speakRow(it) {
+  if (!canSpeak()) return "";
+  return `<div class="speak-row"><button class="chip primary" data-say="1">🔊 Listen</button><button class="chip" data-slow="1">🐢 Slowly</button></div>`;
+}
+function wireSpeak(root, it) {
+  root.querySelector("[data-say]")?.addEventListener("click", () => say(it.t));
+  root.querySelector("[data-slow]")?.addEventListener("click", () => say(it.t, true));
+  root.querySelector(".ex-btn")?.addEventListener("click", () => say(it.ex));
+}
+const prompt = (lao, en) => $(`<div class="prompt"><span class="lao">${lao}</span> · ${en}</div>`);
+function next() { L.i++; render(); }
+
+function finish(ok, item, extra) {
+  L.total++;
+  if (ok) { L.right++; S.xp += 10; }
+  else { L.missed.add(item.t); const st = L.steps[L.i]; L.steps.push({ ...st, choices: st.choices && shuffle(st.choices) }); }
+  grade(item.t, ok); const tr = trackMiss(item.t, ok); bumpStreak(); save();
+  say(ok ? item.t : [item.t, item.ex]);
+  const note = tr === "added" ? "Saved to your tricky words." : tr === "cleared" ? "Off your tricky list. ເກັ່ງຫຼາຍ! (keng lai, well done!)" : tr === "progress" ? `Tricky word: ${S.miss[item.t].streak}/${CLEAR_AFTER} right in a row.` : "";
+  const foot = app.querySelector(".foot"); foot.innerHTML = "";
+  const sheet = $(`<div class="sheet ${ok ? "ok" : "no"}" role="status"><div>
+    <b>${ok ? `<span class="lao">ຖືກຕ້ອງ!</span> Correct` : "Not quite"}</b>
+    ${ok ? "" : `<span class="ans">${laoHtml(item.t, item.ro)}</span>${extra ? `<span class="tr-note">${esc(extra)}</span>` : ""}`}
+    ${note ? `<span class="tr-note">${esc(note)}</span>` : ""}</div><button class="go">Continue</button></div>`);
+  sheet.querySelector("button").onclick = next;
+  foot.append(sheet); sheet.querySelector("button").focus();
+}
+
+function renderStep() {
+  const st = L.steps[L.i], it = st.item;
+  const stage = chrome(), foot = $(`<div class="foot"></div>`);
+
+  if (st.type === "discover") {
+    stage.append(prompt("ເບິ່ງ ແລະ ຟັງ", canSpeak() ? "Look and listen" : "Look and read"));
+    const h = $(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div>
+      <div class="target">${laoHtml(it.t, it.ro)}</div>
+      ${it.ex ? `<button class="chip ex-btn" ${canSpeak() ? "" : "disabled"}><span class="lao">${esc(it.ex)}</span>${S.roman ? ` <span class="ro">${esc(it.exro)}</span>` : ""}</button>` : ""}
+      ${speakRow(it)}<button class="chip" id="hint">Show meaning</button></div>`);
+    h.querySelector("#hint").onclick = (e) => { e.target.outerHTML = `<span class="hint">${esc(it.en)}${it.exen ? ` · ${esc(it.exen)}` : ""}</span>`; };
+    wireSpeak(h, it); stage.append(h);
+    const go = $(`<button class="go wide">Next</button>`); go.onclick = next; foot.append(go);
+    app.append(foot); say([it.t, it.ex]); return;
+  }
+
+  if (st.type === "listen" || st.type === "read") {
+    const listen = st.type === "listen" && canSpeak();
+    stage.append(listen ? prompt("ຟັງ", "Listen. Which picture?") : prompt("ອ່ານ", "Read. Which picture?"));
+    if (listen) {
+      const b = $(`<div class="hero"><button class="listen-big" aria-label="Play again">🔊</button><button class="chip" data-slow="1">🐢 Slowly</button></div>`);
+      b.querySelector(".listen-big").onclick = () => say(it.t); wireSpeak(b, it); stage.append(b); say(it.t);
+    } else stage.append($(`<div class="hero"><div class="target">${laoHtml(it.t, it.ro)}</div></div>`));
+    const g = $(`<div class="grid"></div>`);
+    st.choices.forEach(c => {
+      const card = $(`<button class="card" aria-label="${esc(c.en)}">${c.pic}</button>`);
+      card.onclick = () => {
+        const ok = c.t === it.t;
+        g.querySelectorAll("button").forEach((x, i) => { x.disabled = true; if (st.choices[i].t === it.t) x.classList.add("ok"); });
+        if (!ok) card.classList.add("no");
+        finish(ok, it);
+      };
+      g.append(card);
+    });
+    stage.append(g); app.append(foot); return;
+  }
+
+  if (st.type === "pic2text") {
+    stage.append(prompt("ນີ້ແມ່ນຫຍັງ?", "What is this?"));
+    stage.append($(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div></div>`));
+    const g = $(`<div class="grid"></div>`);
+    st.choices.forEach(c => {
+      const card = $(`<button class="card text">${laoHtml(c.t, c.ro)}</button>`);
+      card.onclick = () => {
+        const ok = c.t === it.t;
+        g.querySelectorAll("button").forEach((x, i) => { x.disabled = true; if (st.choices[i].t === it.t) x.classList.add("ok"); });
+        if (!ok) card.classList.add("no");
+        finish(ok, it);
+      };
+      g.append(card);
+    });
+    stage.append(g); app.append(foot); return;
+  }
+
+  if (st.type === "build") {
+    stage.append(prompt("ລຽງຄຳ", "Put the words in order"));
+    const h = $(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div>${canSpeak() ? speakRow(it) : (S.roman ? `<span class="ro">${esc(it.ro)}</span>` : `<span class="hint">${esc(it.en)}</span>`)}</div>`);
+    wireSpeak(h, it); stage.append(h);
+    const target = it.w.map((w, i) => ({ w, ro: it.wro[i] }));
+    const extra = shuffle(ALL.filter(x => x.w).flatMap(x => x.w.map((w, i) => ({ w, ro: x.wro[i] }))).filter(x => !it.w.includes(x.w)))
+      .filter((x, i, a) => a.findIndex(y => y.w === x.w) === i).slice(0, 2);
+    const line = $(`<div class="answer-line" aria-label="Your answer"></div>`), tiles = $(`<div class="tiles"></div>`);
+    const check = $(`<button class="go wide" disabled>Check</button>`);
+    shuffle(target.concat(extra)).forEach(x => {
+      const t = $(`<button class="tile">${laoHtml(x.w, x.ro)}</button>`);
+      t.onclick = () => {
+        t.classList.add("used");
+        const p = $(`<button class="tile" data-w="${esc(x.w)}">${laoHtml(x.w, x.ro)}</button>`);
+        p.onclick = () => { p.remove(); t.classList.remove("used"); check.disabled = !line.children.length; };
+        line.append(p); check.disabled = false;
+      };
+      tiles.append(t);
+    });
+    check.onclick = () => {
+      const ans = [...line.children].map(x => x.dataset.w).join("");
+      app.querySelectorAll(".tile").forEach(x => x.disabled = true); check.remove();
+      finish(ans === it.t, it);
+    };
+    stage.append(line, tiles); foot.append(check); app.append(foot); say(it.t); return;
+  }
+
+  if (st.type === "speak") {
+    let done = false;
+    stage.append(prompt("ເວົ້າ", "Say it out loud"));
+    const h = $(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div><div class="target">${laoHtml(it.t, it.ro)}</div>${speakRow(it)}</div>`);
+    wireSpeak(h, it); stage.append(h);
+    const self = $(`<button class="go wide soft">I said it</button>`);
+    if (dict) {
+      const mic = $(`<button class="mic" aria-label="Start speaking">🎙️</button>`);
+      const heard = $(`<div class="heard" aria-live="polite">Tap the microphone, then speak. If Lao isn't recognized, use “I said it”.</div>`);
+      let said = "";
+      const offF = dict.onFinal(({ text }) => { said += text; heard.textContent = said.trim(); });
+      const offP = dict.onPartial(({ text }) => { if (text) heard.textContent = (said + " " + text).trim(); });
+      const offS = dict.onState(({ state, reason }) => {
+        mic.classList.toggle("on", state === "listening");
+        if (state !== "idle" || done) return;
+        if (said.trim()) { done = true; mic.disabled = true; self.remove(); finish(similar(said, it.t) >= 0.7, it, `Heard: ${said.trim()}`); }
+        else if (reason === "unavailable") { heard.textContent = "Lao speech recognition isn't available here. Say it aloud and tap “I said it”."; mic.remove(); }
+        else if (reason && reason !== "stopped" && reason !== "viewer_stopped") heard.textContent = "Didn't catch that. Try again, or tap “I said it”.";
+      });
+      cleanup = () => { offF(); offP(); offS(); if (dict.active()) dict.stop().catch(() => {}); };
+      mic.onclick = () => {
+        if (dict.active()) { dict.stop().catch(() => {}); return; }
+        said = ""; heard.textContent = "Listening…";
+        dict.start({ language: "lo" }).catch(e => {
+          heard.textContent = e.code === "unavailable" ? "Lao speech recognition isn't available here. Say it aloud and tap “I said it”."
+            : e.code === "not_granted" ? "The microphone is off for this page. Say it aloud and tap “I said it”." : "Couldn't start the microphone. Tap “I said it” instead.";
+          if (e.code === "unavailable") mic.remove();
+        });
+        setTimeout(() => { if (dict.active()) dict.stop().catch(() => {}); }, 6000);
+      };
+      stage.append(mic, heard);
+    }
+    self.onclick = () => { if (done) return; done = true; self.remove(); app.querySelectorAll(".mic").forEach(m => m.disabled = true); finish(true, it); };
+    foot.append(self); app.append(foot); say(it.t); return;
+  }
+}
+
+function renderDone() {
+  const pct = L.total ? L.right / L.total : 1, n = starsFor(pct);
+  if (L.unit) { S.best[L.unit.id] = Math.max(S.best[L.unit.id] || 0, pct); save(); }
+  const nextUnit = L.unit ? UNITS[UNITS.indexOf(L.unit) + 1] : null;
+  const d = $(`<section class="done"><div class="big" aria-hidden="true">${n === 3 ? "🏆" : "🍚"}</div>
+    <h2><span class="lao">ສຳເລັດ!</span> ${L.unit ? esc(L.unit.title) : esc(L.kind)} done</h2>${starsHtml(n)}
+    <p class="muted">${L.right} of ${L.total} answers right${L.missed.size ? ". These are on your tricky list now:" : "."}</p>
+    ${L.missed.size ? `<div class="missed">${[...L.missed].map(t => { const it = find(t); return `<span class="chip">${it.pic} <span class="lao">${esc(t)}</span></span>`; }).join("")}</div>` : ""}
+    <div class="speak-row">${nextUnit ? `<button class="go" id="next-unit">Next: ${esc(nextUnit.title)}</button>` : ""}<button class="chip" id="home">Back to units</button></div></section>`);
+  d.querySelector("#home").onclick = () => { L = null; render(); };
+  d.querySelector("#next-unit")?.addEventListener("click", () => startUnit(nextUnit));
+  app.append(d);
+}
+
+render();
+</script>
