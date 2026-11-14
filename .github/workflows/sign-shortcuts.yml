@@ -1,0 +1,49 @@
+name: Sign Shortcuts
+
+# Shortcut Creator: 서명 안 된 *.unsigned.shortcut 을 macOS `shortcuts sign` 으로 서명하고
+# 결과(*.shortcut)와 로그(*.sign.log)를 같은 브랜치에 커밋한다.
+on:
+  push:
+    paths:
+      - "Shortcut Creator/shortcuts/**/*.unsigned.shortcut"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sign:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign shortcuts
+        shell: bash
+        run: |
+          sw_vers | tee /tmp/env.txt
+          find "Shortcut Creator/shortcuts" -name "*.unsigned.shortcut" -print0 |
+          while IFS= read -r -d '' f; do
+            out="${f%.unsigned.shortcut}.shortcut"
+            log="${f%.unsigned.shortcut}.sign.log"
+            {
+              cat /tmp/env.txt
+              echo "--- mode anyone ---"
+              shortcuts sign --mode anyone --input "$f" --output "$out" 2>&1 && echo "RESULT: OK (anyone)" ||
+              { echo "RESULT: FAILED (anyone)";
+                echo "--- mode people-who-know-me ---";
+                shortcuts sign --mode people-who-know-me --input "$f" --output "$out" 2>&1 &&
+                  echo "RESULT: OK (people-who-know-me)" || echo "RESULT: FAILED (people-who-know-me)"; }
+              [ -f "$out" ] && { echo "--- output header ---"; head -c 4 "$out"; echo; ls -l "$out"; }
+            } > "$log" 2>&1 || true
+            cat "$log"
+          done
+
+      - name: Commit results
+        shell: bash
+        run: |
+          git config user.name "shortcut-signer[bot]"
+          git config user.email "shortcut-signer@users.noreply.github.com"
+          git add "Shortcut Creator/shortcuts"
+          git diff --cached --quiet && exit 0
+          git commit -m "Sign shortcuts (automated)"
+          git push
