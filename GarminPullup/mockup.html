@@ -156,29 +156,52 @@ function drawPullup(ctx, p, box) {
 
   // torso base with side shading
   const g = ctx.createLinearGradient(S[0].x - 6, 0, S[1].x + 6, 0);
-  g.addColorStop(0, SKIN_LO); g.addColorStop(.25, SKIN); g.addColorStop(.5, SKIN_HI); g.addColorStop(.75, SKIN); g.addColorStop(1, SKIN_LO);
-  path([[S[0].x - 5, sy - 3], [S[1].x + 5, sy - 3], [S[1].x + 3, sy + 12], [S[1].x - 2, sy + 30, 113, waistY], [115, hipY + 2], [85, hipY + 2], [87, waistY], [S[0].x + 2, sy + 30, S[0].x - 3, sy + 12]], g, .3);
+  g.addColorStop(0, SKIN_LO); g.addColorStop(.22, SKIN); g.addColorStop(.5, SKIN_HI); g.addColorStop(.78, SKIN); g.addColorStop(1, SKIN_LO);
+  path([[S[0].x - 5, sy - 3], [S[1].x + 5, sy - 3], [S[1].x + 3, sy + 12], [S[1].x - 2, sy + 30, 113, waistY], [116, hipY + 2], [84, hipY + 2], [87, waistY], [S[0].x + 2, sy + 30, S[0].x - 3, sy + 12]], g, .3);
 
-  // back muscles, both sides
+  /* muscle(): a filled muscle with volume shading and fibre lines running from edge A to edge B, clipped to its outline */
+  const muscle = (pts, base, a0, a1, b0, b1, n, opt = {}) => {
+    ctx.save(); trace(pts);
+    const xs = pts.map(q => q[q.length - 2]), ys = pts.map(q => q[q.length - 1]);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2, r = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * .75;
+    const rg = ctx.createRadialGradient(cx - r * .15, cy - r * .2, r * .05, cx, cy, r);
+    rg.addColorStop(0, opt.hi || base); rg.addColorStop(1, opt.lo || base);
+    ctx.fillStyle = rg; ctx.fill(); ctx.clip();
+    ctx.strokeStyle = opt.fibre || "rgba(60,10,6,.28)"; ctx.lineWidth = opt.fw || .45;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, ax = a0[0] + (a1[0] - a0[0]) * t, ay = a0[1] + (a1[1] - a0[1]) * t, bx = b0[0] + (b1[0] - b0[0]) * t, by = b0[1] + (b1[1] - b0[1]) * t;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + bx) / 2 + (opt.bow || 0), (ay + by) / 2, bx, by); ctx.stroke();
+    }
+    ctx.restore(); trace(pts); line(.75, opt.edge ?? .45); ctx.stroke();
+  };
+  function trace(pts) { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) { const q = pts[i]; q.length === 4 ? ctx.quadraticCurveTo(q[0], q[1], q[2], q[3]) : ctx.lineTo(q[0], q[1]); } ctx.closePath(); }
+  const R = (a) => ({ hi: `rgba(255,96,74,${a})`, lo: `rgba(176,30,22,${a})` });
+  const GREY = { hi: SKIN_HI, lo: SKIN_LO, fibre: "rgba(30,32,36,.22)" };
+  const on = glow;                      // contraction strength 0.45 → 0.95
+
   [-1, 1].forEach(sd => {
-    const X = (dx) => 100 + sd * dx;
-    // latissimus dorsi: armpit sweep down to the lower back
-    path([[X(26), sy + 9], [X(27), sy + 26, X(12), waistY - 2], [X(7), sy + 36], [X(9), sy + 18], [X(17), sy + 11, X(26), sy + 9]], red(glow), .35);
-    line(.6, .2); ctx.beginPath(); ctx.moveTo(X(22), sy + 14); ctx.quadraticCurveTo(X(19), sy + 26, X(12), sy + 36); ctx.stroke();   // lat striation
-    ctx.strokeStyle = redHi(.35 * glow); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(X(24), sy + 12); ctx.quadraticCurveTo(X(24), sy + 24, X(15), sy + 34); ctx.stroke();
-    // teres major + infraspinatus over the shoulder blade
-    path([[X(10), sy + 4], [X(21), sy + 2], [X(25), sy + 9], [X(17), sy + 15], [X(10), sy + 13]], red(.35 + .5 * p), .35);
-    path([[X(19), sy + 10], [X(26), sy + 8], [X(25), sy + 13], [X(19), sy + 15]], red(Math.min(1, glow + .05)), .3);
-    // erector spinae column
-    path([[X(2.5), sy + 22], [X(8), sy + 30, X(7), hipY - 2], [X(2.5), hipY - 2]], SKIN_HI, .3);
-    // external oblique edge
-    line(.7, .22); ctx.beginPath(); ctx.moveTo(X(13), waistY - 4); ctx.quadraticCurveTo(X(15), hipY - 6, X(14), hipY); ctx.stroke();
+    const X = (dx) => 100 + sd * dx, bow = sd * 1.5;
+    // infraspinatus + teres over the shoulder blade (stabilisers, grey)
+    muscle([[X(13), sy + 3], [X(24), sy + 1], [X(28), sy + 9], [X(22), sy + 17], [X(13), sy + 16]], SKIN, [X(13), sy + 4], [X(13), sy + 15], [X(27), sy + 6], [X(23), sy + 16], 6, GREY);
+    // rhomboids: between spine and shoulder blade, diagonal fibres
+    muscle([[X(1.5), sy + 4], [X(12), sy + 4], [X(13), sy + 17], [X(1.5), sy + 23]], "", [X(1.5), sy + 5], [X(1.5), sy + 22], [X(12), sy + 3], [X(13), sy + 16], 7, { ...R(on), fibre: "rgba(70,8,4,.35)" });
+    // latissimus dorsi: the big wedge from the armpit to the lower back
+    muscle([[X(28), sy + 10], [X(29), sy + 26, X(17), waistY + 2], [X(9), hipY - 3], [X(3), hipY - 4], [X(3), sy + 30], [X(13), sy + 18], [X(22), sy + 17]], "",
+      [X(27), sy + 11], [X(23), sy + 18], [X(16), waistY + 2], [X(4), sy + 32], 12, { ...R(on), bow, fibre: "rgba(80,6,2,.32)" });
+    // erector spinae column with segment lines
+    muscle([[X(1.2), sy + 24], [X(6), sy + 28], [X(8), hipY - 6, X(6), hipY], [X(1.2), hipY]], SKIN, [X(1.5), sy + 26], [X(7), sy + 29], [X(1.5), hipY - 1], [X(6.5), hipY - 1], 3, GREY);
+    // external obliques (core) at the waist
+    muscle([[X(13), waistY - 6], [X(15.5), waistY - 2], [X(16), hipY - 2], [X(13), hipY + 1], [X(10), waistY + 2]], "", [X(13), waistY - 6], [X(16), waistY], [X(10), waistY + 2], [X(13), hipY + 1], 5, { ...R(.25 + .45 * p), fibre: "rgba(80,6,2,.3)" });
   });
-  // trapezius: upper, middle and lower fibres as one kite
-  path([[100, sy - 13], [S[1].x - 6, sy - 2], [109, sy + 4], [104, sy + 14], [100, sy + 24], [96, sy + 14], [91, sy + 4], [S[0].x + 6, sy - 2]], red(Math.min(1, glow + .08)), .35);
-  line(.6, .2); ctx.beginPath(); ctx.moveTo(92, sy); ctx.lineTo(100, sy + 7); ctx.lineTo(108, sy); ctx.stroke();
+  // trapezius: one kite over both sides, fibres converging on the spine
+  const tr = R(Math.min(1, on + .05));
+  ctx.save(); trace([[100, sy - 15], [S[1].x - 5, sy - 3], [114, sy + 4], [104, sy + 12], [100, sy + 16], [96, sy + 12], [86, sy + 4], [S[0].x + 5, sy - 3]]);
+  const tg = ctx.createRadialGradient(100, sy - 4, 2, 100, sy, 26); tg.addColorStop(0, tr.hi); tg.addColorStop(1, tr.lo); ctx.fillStyle = tg; ctx.fill(); ctx.clip();
+  ctx.strokeStyle = "rgba(80,6,2,.32)"; ctx.lineWidth = .45;
+  for (let i = 0; i <= 14; i++) { const t = i / 14, y = sy - 14 + t * 30; ctx.beginPath(); ctx.moveTo(100, y); ctx.lineTo(S[0].x + 4, sy - 3 + t * 6); ctx.moveTo(100, y); ctx.lineTo(S[1].x - 4, sy - 3 + t * 6); ctx.stroke(); }
+  ctx.restore(); trace([[100, sy - 15], [S[1].x - 5, sy - 3], [114, sy + 4], [104, sy + 12], [100, sy + 16], [96, sy + 12], [86, sy + 4], [S[0].x + 5, sy - 3]]); line(.75, .45); ctx.stroke();
   // spine groove
-  line(1.3, .3); ctx.beginPath(); ctx.moveTo(100, sy + 2); ctx.lineTo(100, hipY - 2); ctx.stroke();
+  line(1.3, .32); ctx.beginPath(); ctx.moveTo(100, sy - 6); ctx.lineTo(100, hipY - 2); ctx.stroke();
 
   // shorts: waistband, seat seam, two leg openings
   const sh = { top: hipY - 7, seat: hipY + 9, hem: hipY + 18 };
@@ -189,17 +212,34 @@ function drawPullup(ctx, p, box) {
   ctx.beginPath(); ctx.moveTo(82, sh.top + 5); ctx.lineTo(80, sh.hem - 2); ctx.moveTo(118, sh.top + 5); ctx.lineTo(120, sh.hem - 2); ctx.stroke();
   ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(89, sh.top + 6); ctx.quadraticCurveTo(92, sh.seat - 2, 98, sh.seat); ctx.moveTo(111, sh.top + 6); ctx.quadraticCurveTo(108, sh.seat - 2, 102, sh.seat); ctx.stroke(); // fabric folds
 
-  // arms: forearm, then upper arm with triceps, then deltoid cap
+  // arms: defined forearms, biceps on the inner edge, triceps heads, three-part deltoid
   [0, 1].forEach(i => {
-    const s = S[i], e = E[i], h = H[i];
-    taper(e, h, 8.5, 6, SKIN);
-    bulge(e, h, .28, 13, 8.5, red(.3 + .35 * p));                 // forearm flexors / brachioradialis
-    taper(s, e, 12, 8.5, SKIN);
-    bulge(s, e, .5, 22, 9.5, SKIN_HI);                            // triceps (long head)
-    bulge(s, e, .62, 13, 5, red(.35 + .45 * p), i ? -2.2 : 2.2);  // brachialis working on the pull
-    line(.6, .25); ctx.beginPath(); ctx.moveTo(s.x + (e.x - s.x) * .45, s.y + (e.y - s.y) * .45); ctx.lineTo(s.x + (e.x - s.x) * .8, s.y + (e.y - s.y) * .8); ctx.stroke();
-    ctx.fillStyle = red(.45 + .45 * p); ctx.beginPath(); ctx.ellipse(s.x + (i ? 2 : -2), s.y + 2, 8, 7, 0, 0, 7); ctx.fill(); line(.7, .3); ctx.stroke();   // rear deltoid
-    ctx.fillStyle = SKIN; ctx.beginPath(); ctx.ellipse(h.x, h.y + 1, 5, 4.8, 0, 0, 7); ctx.fill(); line(.6, .25); ctx.stroke();                                // hand
+    const s = S[i], e = E[i], h = H[i], sd = i ? 1 : -1;
+    const along = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+    const perp = (a, b) => { const l = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: -(b.y - a.y) / l, y: (b.x - a.x) / l }; };
+    // forearm: base, then flexor mass (red) with fibre lines and a tendon taper to the wrist
+    taper(e, h, 9, 5.5, SKIN);
+    const fp = perp(e, h), f0 = along(e, h, .08), f1 = along(e, h, .7);
+    const fore = [[f0.x + fp.x * 4.6, f0.y + fp.y * 4.6], [f1.x + fp.x * 2.6, f1.y + fp.y * 2.6], [f1.x - fp.x * 1.5, f1.y - fp.y * 1.5], [f0.x - fp.x * 2.2, f0.y - fp.y * 2.2]];
+    muscle(fore, "", fore[0], fore[3], fore[1], fore[2], 5, { ...R(.4 + .5 * p), fibre: "rgba(80,6,2,.3)" });
+    // upper arm: base, triceps long + lateral heads (grey), biceps visible along the inner edge (red)
+    taper(s, e, 12.5, 9, SKIN);
+    const up = perp(s, e), u0 = along(s, e, .12), u1 = along(s, e, .86), um = along(s, e, .5);
+    const inner = -sd;   // the side of the upper arm that faces the head
+    const bic = [[u0.x + up.x * 5.8 * inner, u0.y + up.y * 5.8 * inner], [um.x + up.x * 6.6 * inner, um.y + up.y * 6.6 * inner], [u1.x + up.x * 4.2 * inner, u1.y + up.y * 4.2 * inner], [u1.x + up.x * 1.2 * inner, u1.y + up.y * 1.2 * inner], [u0.x + up.x * 2 * inner, u0.y + up.y * 2 * inner]];
+    muscle(bic, "", bic[0], bic[4], bic[2], bic[3], 4, { ...R(.4 + .55 * p), fibre: "rgba(80,6,2,.3)" });
+    const tri = [[u0.x + up.x * 1.5 * inner, u0.y + up.y * 1.5 * inner], [u1.x + up.x * 1 * inner, u1.y + up.y * 1 * inner], [u1.x - up.x * 3.2 * inner, u1.y - up.y * 3.2 * inner], [um.x - up.x * 6.2 * inner, um.y - up.y * 6.2 * inner], [u0.x - up.x * 5.4 * inner, u0.y - up.y * 5.4 * inner]];
+    muscle(tri, SKIN, tri[0], tri[4], tri[1], tri[2], 4, GREY);
+    line(.6, .3); ctx.beginPath(); ctx.moveTo(um.x - up.x * 2 * inner, um.y - up.y * 2 * inner); ctx.lineTo(u1.x - up.x * .5 * inner, u1.y - up.y * .5 * inner); ctx.stroke();   // triceps tendon split
+    // deltoid cap: posterior head red, lateral head grey
+    const dc = { x: s.x + sd * 3, y: s.y + 1 };
+    ctx.fillStyle = SKIN; ctx.beginPath(); ctx.ellipse(dc.x + sd * 2, dc.y, 6.5, 8, 0, 0, 7); ctx.fill(); line(.6, .3); ctx.stroke();
+    // posterior deltoid: a teardrop wrapping the back of the shoulder, with fibres
+    const rd = R(.3 + .45 * p), tip = along(s, e, .38);
+    const dpts = [[dc.x - sd * 4, dc.y - 5], [dc.x + sd * 2, dc.y - 3, dc.x + sd * 1.5, dc.y + 3], [tip.x, tip.y], [dc.x - sd * 6, dc.y + 3, dc.x - sd * 4, dc.y - 5]];
+    muscle(dpts, "", [dc.x - sd * 4, dc.y - 5], [dc.x + sd * 1.5, dc.y + 3], [tip.x - sd * 1, tip.y], [tip.x, tip.y], 5, { ...rd, fibre: "rgba(80,6,2,.3)" });
+    // hand
+    ctx.fillStyle = SKIN; ctx.beginPath(); ctx.ellipse(h.x, h.y + 1, 5, 4.8, 0, 0, 7); ctx.fill(); line(.6, .25); ctx.stroke();
   });
 
   // neck and head (from behind)
