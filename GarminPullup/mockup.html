@@ -88,8 +88,11 @@ function ik(S, H, L1, L2, side) {
   d = Math.min(d, L1 + L2 - .01);
   const a = Math.acos((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d));
   const base = Math.atan2(dy, dx);
-  const ang = base + side * a; // bend the elbow outward, away from the body
-  return { x: S.x + L1 * Math.cos(ang), y: S.y + L1 * Math.sin(ang) };
+  // Two possible elbows; keep the lower one so each arm forms a v (elbow pointing down) as the lifter rises.
+  const e1 = { x: S.x + L1 * Math.cos(base + a), y: S.y + L1 * Math.sin(base + a) };
+  const e2 = { x: S.x + L1 * Math.cos(base - a), y: S.y + L1 * Math.sin(base - a) };
+  const low = e1.y > e2.y ? e1 : e2, high = e1.y > e2.y ? e2 : e1;
+  return Math.abs(e1.y - e2.y) < 0.5 ? (side * (e1.x - S.x) > 0 ? e1 : e2) : low;
 }
 function drawPullup(ctx, p, box, opt = {}) {
   // box: {x, y, s} draws the 200-unit figure scaled by s/200 with its top-left at x,y
@@ -98,9 +101,9 @@ function drawPullup(ctx, p, box, opt = {}) {
   const red = (a) => `rgba(229,64,47,${a})`;
   const glow = .45 + .45 * p;
   const L1 = 30, L2 = 29, barY = 34;
-  const H = [{ x: 68, y: barY }, { x: 132, y: barY }];
-  const hangY = barY + Math.sqrt(Math.pow(L1 + L2 - 1.5, 2) - 36);
-  const sy = hangY + (58 - hangY) * p;              // shoulder height
+  const H = [{ x: 56, y: barY }, { x: 144, y: barY }];   // wide grip, hands outside the shoulders
+  const hangY = barY + Math.sqrt(Math.pow(L1 + L2 - 1.5, 2) - 256);
+  const sy = hangY + (43 - hangY) * p;              // shoulder height: chin clears the bar at the top
   const sway = Math.sin(p * Math.PI) * 1.2;
   const S = [{ x: 72 + sway * .2, y: sy }, { x: 128 + sway * .2, y: sy }];
 
