@@ -19,9 +19,24 @@ def output_ref(action, name):
             "Type": "ActionOutput", "OutputName": name}
 
 
-def var(action, name):
-    """매개변수 하나에 변수 하나만 넣을 때 (WFTextTokenAttachment)."""
-    return {"Value": output_ref(action, name), "WFSerializationType": "WFTextTokenAttachment"}
+def ref(p):
+    """(action, name) 튜플 또는 이미 만든 참조 dict를 참조 dict로."""
+    return p if isinstance(p, dict) else output_ref(*p)
+
+
+def named(name):
+    """'변수 설정'으로 만든 이름 있는 변수 참조."""
+    return {"Type": "Variable", "VariableName": name}
+
+
+SHORTCUT_INPUT = {"Type": "ExtensionInput"}
+
+
+def var(action, name=None):
+    """매개변수 하나에 변수 하나만 넣을 때 (WFTextTokenAttachment).
+    var(action, "출력 이름") 또는 var(named("변수")) / var(SHORTCUT_INPUT)."""
+    r = action if name is None else output_ref(action, name)
+    return {"Value": r, "WFSerializationType": "WFTextTokenAttachment"}
 
 
 def text(*parts):
@@ -32,7 +47,7 @@ def text(*parts):
             s += p
         else:
             pos = len(s.encode("utf-16-le")) // 2  # 위치는 UTF-16 단위
-            attachments["{%d, 1}" % pos] = output_ref(*p)
+            attachments["{%d, 1}" % pos] = ref(p)
             s += OBJ
     return {"Value": {"string": s, "attachmentsByRange": attachments},
             "WFSerializationType": "WFTextTokenString"}
@@ -43,7 +58,7 @@ def action(identifier, **params):
     return {"WFWorkflowActionIdentifier": identifier, "WFWorkflowActionParameters": params}
 
 
-def build(actions, icon_color=4282601983, glyph=59511):
+def build(actions, icon_color=4282601983, glyph=59511, accepts_input=False):
     return {
         "WFWorkflowClientVersion": "2607.0.2",
         "WFWorkflowMinimumClientVersion": 900,
@@ -53,9 +68,10 @@ def build(actions, icon_color=4282601983, glyph=59511):
         "WFWorkflowImportQuestions": [],
         "WFWorkflowTypes": [],
         "WFQuickActionSurfaces": [],
-        "WFWorkflowInputContentItemClasses": [],
+        "WFWorkflowInputContentItemClasses": (["WFStringContentItem", "WFGenericFileContentItem"]
+                                              if accepts_input else []),
         "WFWorkflowOutputContentItemClasses": [],
-        "WFWorkflowHasShortcutInputVariables": False,
+        "WFWorkflowHasShortcutInputVariables": accepts_input,
         "WFWorkflowHasOutputFallback": False,
         "WFWorkflowActions": actions,
     }
