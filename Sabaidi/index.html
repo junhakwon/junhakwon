@@ -131,6 +131,7 @@ button:focus-visible, select:focus-visible { outline: 3px solid var(--brand); ou
 .done .stars { font-size: 34px; }
 .missed { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .muted { color: var(--muted); }
+.native { font-size: 13px; font-weight: 700; color: var(--good); background: var(--good-bg); border-radius: 999px; padding: 8px 12px; }
 a { color: var(--brand); }
 a.chip { text-decoration: none; color: var(--ink); }
 .vids { border-top: 1px solid var(--line); padding-top: 8px; }
@@ -183,7 +184,16 @@ const UNITS = [
     { t: "ແມວສອງໂຕ", ro: "maeo song to", w: ["ແມວ", "ສອງ", "ໂຕ"], wro: ["maeo", "song", "to"], pic: "🐈🐈", en: "two cats" },
     { t: "ໝາສາມໂຕ", ro: "ma sam to", w: ["ໝາ", "ສາມ", "ໂຕ"], wro: ["ma", "sam", "to"], pic: "🐕🐕🐕", en: "three dogs" },
     { t: "ໝາກມ່ວງສີ່ໜ່ວຍ", ro: "mak muang si nuai", w: ["ໝາກມ່ວງ", "ສີ່", "ໜ່ວຍ"], wro: ["mak muang", "si", "nuai"], pic: "🥭🥭🥭🥭", en: "four mangoes" },
-    { t: "ໝາກກ້ວຍຫ້າໜ່ວຍ", ro: "mak kuai ha nuai", w: ["ໝາກກ້ວຍ", "ຫ້າ", "ໜ່ວຍ"], wro: ["mak kuai", "ha", "nuai"], pic: "🍌🍌🍌🍌🍌", en: "five bananas" } ] },
+    { t: "ໝາກກ້ວຍຫ້າໜ່ວຍ", ro: "mak kuai ha nuai", w: ["ໝາກກ້ວຍ", "ຫ້າ", "ໜ່ວຍ"], wro: ["mak kuai", "ha", "nuai"], pic: "🍌🍌🍌🍌🍌", en: "five bananas" },
+    { t: "ຮ້ອຍ", ro: "hoi", pic: "💯", en: "one hundred" } ] },
+  { id: "laos", title: "Laos on the map", lao: "ປະເທດລາວ", pic: "🇱🇦", items: [
+    { t: "ປະເທດລາວ", ro: "pathet lao", pic: "🇱🇦", en: "Laos (the country)" },
+    { t: "ລາວ", ro: "lao", pic: "👥", en: "Lao (the people or language; also he / she)" },
+    { t: "ພາສາ", ro: "phasa", pic: "🗣️💬", en: "language" },
+    { t: "ວຽງຈັນ", ro: "viangchan", pic: "🏙️", en: "Vientiane, the capital" },
+    { t: "ຫຼວງພະບາງ", ro: "luang phabang", pic: "🛕", en: "Luang Prabang" },
+    { t: "ແຂວງ", ro: "khaeng", pic: "🗺️", en: "province" },
+    { t: "ອາຊີອາຄະເນ", ro: "asi akhane", pic: "🌏", en: "Southeast Asia" } ] },
   { id: "phrases", title: "Everyday phrases", lao: "ສະບາຍດີ", pic: "🙏", items: [
     { t: "ສະບາຍດີ", ro: "sabaidi", pic: "👋🙂", en: "Hello", ex: "ສະບາຍດີ, ສະບາຍດີບໍ?", exro: "sabaidi, sabaidi bo?", exen: "Hello, how are you?" },
     { t: "ຂອບໃຈ", ro: "khop chai", pic: "🙏", en: "Thank you", ex: "ຂອບໃຈຫຼາຍໆ", exro: "khop chai lai lai", exen: "Thank you very much." },
@@ -193,18 +203,12 @@ const UNITS = [
     { t: "ໂຊກດີ", ro: "sok di", pic: "👋🍀", en: "Goodbye (good luck)", ex: "ໂຊກດີເດີ", exro: "sok di doe", exen: "Take care!" },
     { t: "ລາຕີສະຫວັດ", ro: "latisawat", pic: "🌙", en: "Good night" } ] },
 ];
-/* Native-speaker videos found on YouTube for each unit (titles as published there; opened in a new tab). */
-const VIDEOS = {
-  people: [{ id: "vp_sjFD7flA", title: "Learn Lao language 101: Vocabulary 800, Lesson 6" }, { id: "q_dwNL_4pIk", title: "Learn Lao language 101: Vocabulary 800, Lesson 2" }],
-  food: [{ id: "mHI_oCq5q_s", title: "Learn Lao: how to describe food flavor" }, { id: "9DjhpE2byOU", title: "Learn Lao Language, Lesson 77: ordering food" }],
-  actions: [{ id: "mjjxCGIID6M", title: "Spoken Lao Reading and Listening, Lesson 10" }],
-  colours: [],
-  numbers: [{ id: "KgFYM7t9iBY", title: "Numbers in Lao language for beginners" }, { id: "qxyRQMKr3HM", title: "Learn Lao numbers" }, { id: "Z-cONN-zhLQ", title: "Laos Basics, Lesson 1: hello, goodbye, numbers" }],
-  phrases: [{ id: "yTbojOD5n-g", title: "Learn to read and speak Lao: sabaidee" }, { id: "HC3jLEfclxk", title: "Learn to read and speak Lao: khawb jai (thank you)" }, { id: "j7TToA_jaMg", title: "Learn to read and speak Lao: greetings" }, { id: "fqun3myQdgM", title: "Basic Greeting in Lao (Lao101)" }, { id: "Z4z6EjBiuKw", title: "Lesson 1: Lao greeting words and phrases" }],
+/* Native-speaker recordings (Lingua Libre, Wikimedia Commons, CC BY-SA 4.0), published next to this page. */
+const AUDIO = {
+  "ສະບາຍດີ": "audio/sabaidi.mp3", "ປະເທດລາວ": "audio/pathet-lao.mp3", "ລາວ": "audio/lao.mp3", "ພາສາ": "audio/phasa.mp3",
+  "ວຽງຈັນ": "audio/viangchan.mp3", "ຫຼວງພະບາງ": "audio/luang-phabang.mp3", "ແຂວງ": "audio/khaeng.mp3",
+  "ອາຊີອາຄະເນ": "audio/asi-akhane.mp3", "ຮ້ອຍ": "audio/hoi.mp3",
 };
-const SEARCH = { people: "Lao words family people animals", food: "Lao food vocabulary", actions: "Lao verbs eat drink sleep", colours: "colors in Lao language", numbers: "Lao numbers classifiers", phrases: "Lao greetings phrases" };
-const ytSearch = (q) => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
-const ytWord = (it) => ytSearch(`${it.t} ${it.ro} Lao pronunciation`);
 const ALL = UNITS.flatMap(u => u.items.map(it => ({ ...it, unit: u.id })));
 const find = (t) => ALL.find(x => x.t === t);
 const BOX_DAYS = [0, 0, 1, 3, 7, 16];
@@ -263,16 +267,34 @@ function engine() {
   return null;
 }
 if ("speechSynthesis" in window) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => { if (!L) render(); }; }
-function say(lines, slow) {
-  lines = [].concat(lines).filter(Boolean);
-  const e = engine(); if (!e || !lines.length) return;
-  if (e.kind === "claude") {
-    tts.speak(lines.map(t => ({ text: t, language: "lo" })), { rate: slow ? 0.75 : 1, language: "lo" }).catch(() => {});
-    return;
-  }
-  speechSynthesis.cancel();
-  lines.forEach(t => { const u = new SpeechSynthesisUtterance(t); u.lang = e.v.lang; u.voice = e.v; u.rate = slow ? 0.72 : 1; speechSynthesis.speak(u); });
+let player = null, sayToken = 0;
+function playClip(src, slow, token) {
+  return new Promise(res => {
+    if (token !== sayToken) return res();
+    if (player) player.pause();
+    player = new Audio(src); player.playbackRate = slow ? 0.75 : 1;
+    player.onended = player.onerror = () => res();
+    player.play().catch(() => res());
+  });
 }
+function speakLine(t, slow) {
+  const e = engine(); if (!e) return Promise.resolve();
+  if (e.kind === "claude") return tts.speak([{ text: t, language: "lo" }], { rate: slow ? 0.75 : 1, language: "lo" }).catch(() => {});
+  return new Promise(res => { const u = new SpeechSynthesisUtterance(t); u.lang = e.v.lang; u.voice = e.v; u.rate = slow ? 0.72 : 1; u.onend = u.onerror = res; speechSynthesis.speak(u); });
+}
+async function say(lines, slow) {
+  lines = [].concat(lines).filter(Boolean); if (!lines.length) return;
+  const token = ++sayToken;
+  if (player) player.pause();
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  for (const t of lines) {
+    if (token !== sayToken) return;
+    if (AUDIO[t]) await playClip(AUDIO[t], slow, token);
+    else if (engine()) await speakLine(t, slow);
+  }
+}
+const hasNative = (it) => !!AUDIO[it.t];
+const canHear = (it) => hasNative(it) || canSpeak();
 const canSpeak = () => !!engine();
 
 /* ---------- Helpers ---------- */
@@ -373,22 +395,7 @@ function renderHome() {
     units.append(b);
   });
   app.append(units);
-  renderVideos();
   renderSettings();
-}
-
-function renderVideos() {
-  const p = $(`<section class="panel"><div class="label">Native speakers on YouTube</div>
-    <p>Hear real Lao voices for each unit. Videos open on YouTube in a new tab.</p></section>`);
-  UNITS.forEach(u => {
-    const vids = VIDEOS[u.id] || [];
-    const d = $(`<details class="vids"><summary><span class="lao">${esc(u.lao)}</span> · ${esc(u.title)} <span class="muted">(${vids.length ? vids.length + " video" + (vids.length > 1 ? "s" : "") : "search"})</span></summary>
-      <ul>${vids.map(v => `<li><a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener">▶ ${esc(v.title)}</a></li>`).join("")}
-      <li><a href="${ytSearch(SEARCH[u.id])}" target="_blank" rel="noopener">🔎 Search YouTube for more: “${esc(SEARCH[u.id])}”</a></li></ul></details>`);
-    p.append(d);
-  });
-  p.append($(`<p class="note">Channels with whole beginner series: <a href="https://www.youtube.com/@Lao101/videos" target="_blank" rel="noopener">#Lao101</a>.</p>`));
-  app.append(p);
 }
 
 function renderSettings() {
@@ -400,7 +407,11 @@ function renderSettings() {
         <option value="auto">Automatic</option>${ttsLao ? `<option value="claude">Claude voice</option>` : ""}
         ${vs.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)}</option>`).join("")}</select>
         <button class="chip primary" id="voice-test">🔊 Test</button></div>`
-      : `<p class="note"><b>No Lao voice on this device yet.</b> iPhones, Android phones and desktop browsers usually don't include a Lao text-to-speech voice, so lessons run on pictures, Lao script and romanization, and the listening exercises become reading exercises. If a Lao voice becomes available here, Sabaidi uses it automatically.</p>`}
+      : `<p class="note"><b>No Lao voice on this device.</b> Words marked 🎧 play a real native-speaker recording; the others show Lao script and romanization, and their listening exercises become reading exercises.</p>`}
+    <p class="note">🎧 Native recordings (${Object.keys(AUDIO).length} words, mostly in “Laos on the map”): spoken by
+      <a href="https://commons.wikimedia.org/wiki/Category:Lingua_Libre_pronunciation-lao" target="_blank" rel="noopener">RenWikiLA</a>
+      for Lingua Libre, via Wikimedia Commons, licensed
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>. These are all the Lao word recordings that exist there today.</p>
   </section>`);
   p.querySelector("#roman").onchange = (e) => { S.roman = e.target.checked; save(); };
   const sel = p.querySelector("#voice-pick");
@@ -433,8 +444,8 @@ function chrome() {
   const stage = $(`<main class="stage"></main>`); app.append(stage); return stage;
 }
 function speakRow(it) {
-  if (!canSpeak()) return "";
-  return `<div class="speak-row"><button class="chip primary" data-say="1">🔊 Listen</button><button class="chip" data-slow="1">🐢 Slowly</button></div>`;
+  if (!canHear(it)) return "";
+  return `<div class="speak-row">${hasNative(it) ? `<span class="native">🎧 Native speaker</span>` : ""}<button class="chip primary" data-say="1">🔊 Listen</button><button class="chip" data-slow="1">🐢 Slowly</button></div>`;
 }
 function wireSpeak(root, it) {
   root.querySelector("[data-say]")?.addEventListener("click", () => say(it.t));
@@ -454,7 +465,7 @@ function finish(ok, item, extra) {
   const foot = app.querySelector(".foot"); foot.innerHTML = "";
   const sheet = $(`<div class="sheet ${ok ? "ok" : "no"}" role="status"><div>
     <b>${ok ? `<span class="lao">ຖືກຕ້ອງ!</span> Correct` : "Not quite"}</b>
-    ${ok ? "" : `<span class="ans">${laoHtml(item.t, item.ro)}</span>${extra ? `<span class="tr-note">${esc(extra)}</span>` : ""}<a class="tr-note" href="${ytWord(item)}" target="_blank" rel="noopener">▶ Hear it on YouTube</a>`}
+    ${ok ? "" : `<span class="ans">${laoHtml(item.t, item.ro)}</span>${extra ? `<span class="tr-note">${esc(extra)}</span>` : ""}`}
     ${note ? `<span class="tr-note">${esc(note)}</span>` : ""}</div><button class="go">Continue</button></div>`);
   sheet.querySelector("button").onclick = next;
   foot.append(sheet); sheet.querySelector("button").focus();
@@ -465,11 +476,11 @@ function renderStep() {
   const stage = chrome(), foot = $(`<div class="foot"></div>`);
 
   if (st.type === "discover") {
-    stage.append(prompt("ເບິ່ງ ແລະ ຟັງ", canSpeak() ? "Look and listen" : "Look and read"));
+    stage.append(prompt("ເບິ່ງ ແລະ ຟັງ", canHear(it) ? "Look and listen" : "Look and read"));
     const h = $(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div>
       <div class="target">${laoHtml(it.t, it.ro)}</div>
-      ${it.ex ? `<button class="chip ex-btn" ${canSpeak() ? "" : "disabled"}><span class="lao">${esc(it.ex)}</span>${S.roman ? ` <span class="ro">${esc(it.exro)}</span>` : ""}</button>` : ""}
-      ${speakRow(it)}<div class="speak-row"><a class="chip yt" href="${ytWord(it)}" target="_blank" rel="noopener">▶ Hear a native speaker</a><button class="chip" id="hint">Show meaning</button></div></div>`);
+      ${it.ex ? `<button class="chip ex-btn" ${canSpeak() || AUDIO[it.ex] ? "" : "disabled"}><span class="lao">${esc(it.ex)}</span>${S.roman ? ` <span class="ro">${esc(it.exro)}</span>` : ""}</button>` : ""}
+      ${speakRow(it)}<button class="chip" id="hint">Show meaning</button></div>`);
     h.querySelector("#hint").onclick = (e) => { e.target.outerHTML = `<span class="hint">${esc(it.en)}${it.exen ? ` · ${esc(it.exen)}` : ""}</span>`; };
     wireSpeak(h, it); stage.append(h);
     const go = $(`<button class="go wide">Next</button>`); go.onclick = next; foot.append(go);
@@ -477,7 +488,7 @@ function renderStep() {
   }
 
   if (st.type === "listen" || st.type === "read") {
-    const listen = st.type === "listen" && canSpeak();
+    const listen = st.type === "listen" && canHear(it);
     stage.append(listen ? prompt("ຟັງ", "Listen. Which picture?") : prompt("ອ່ານ", "Read. Which picture?"));
     if (listen) {
       const b = $(`<div class="hero"><button class="listen-big" aria-label="Play again">🔊</button><button class="chip" data-slow="1">🐢 Slowly</button></div>`);
@@ -516,7 +527,7 @@ function renderStep() {
 
   if (st.type === "build") {
     stage.append(prompt("ລຽງຄຳ", "Put the words in order"));
-    const h = $(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div>${canSpeak() ? speakRow(it) : (S.roman ? `<span class="ro">${esc(it.ro)}</span>` : `<span class="hint">${esc(it.en)}</span>`)}</div>`);
+    const h = $(`<div class="hero"><div class="big" aria-hidden="true">${it.pic}</div>${canHear(it) ? speakRow(it) : (S.roman ? `<span class="ro">${esc(it.ro)}</span>` : `<span class="hint">${esc(it.en)}</span>`)}</div>`);
     wireSpeak(h, it); stage.append(h);
     const target = it.w.map((w, i) => ({ w, ro: it.wro[i] }));
     const extra = shuffle(ALL.filter(x => x.w).flatMap(x => x.w.map((w, i) => ({ w, ro: x.wro[i] }))).filter(x => !it.w.includes(x.w)))
