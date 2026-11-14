@@ -1,7 +1,8 @@
 """단축어 "let's eat" 생성 스크립트.
 
-흐름: 받아쓰기 → 빈 입력 확인 → 검색어를 클립보드에 복사
-      → coupangeats://search?keyword=<검색어> 열기 → 안내 알림
+v2 흐름: 받아쓰기 → 빈 입력 확인 → 검색어를 클립보드에 복사
+         → coupangeats:// 로 앱 열기 → "검색창에 붙여넣기" 안내 알림
+v1(2026-11-14)의 coupangeats://search?keyword= 는 실기기에서 홈만 열림 → 제거
 
 한계: iOS 단축어는 다른 앱의 버튼(맨 위 결과)을 대신 누를 수 없음.
       쿠팡이츠 검색 딥링크 형식은 비공개라 'keyword' 파라미터는 미검증 추정값.
@@ -15,7 +16,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "tools"))
 from sclib import action, build, new_uuid, text, var, write  # noqa: E402
 
 NAME = "let's eat"
-SEARCH_URL = "coupangeats://search?keyword="
+APP_URL = "coupangeats://"
 
 A = []
 A.append(action("is.workflow.actions.notification", WFNotificationActionTitle="let's eat 🍽️",
@@ -36,13 +37,11 @@ A.append(action("is.workflow.actions.conditional", GroupingIdentifier=g, WFContr
 # 딥링크가 안 통할 때를 대비해 검색어를 클립보드에 복사
 A.append(action("is.workflow.actions.setclipboard", WFInput=var(*DICT)))
 
-enc = action("is.workflow.actions.urlencode", WFEncodeMode="Encode", WFInput=var(*DICT))
-A.append(enc)
-url = action("is.workflow.actions.url", WFURLActionURL=text(SEARCH_URL, (enc, "URL 인코딩된 텍스트")))
+url = action("is.workflow.actions.url", WFURLActionURL=APP_URL)
 A.append(url)
 
 A.append(action("is.workflow.actions.notification", WFNotificationActionTitle="let's eat 🍽️",
-                WFNotificationActionBody=text("'", DICT, "' 검색할게요. 결과가 안 보이면 검색창에 붙여넣기 하세요 (복사됨)"),
+                WFNotificationActionBody=text("'", DICT, "' 복사됨 📋 검색창을 눌러 붙여넣기 하세요"),
                 WFNotificationActionSound=False))
 A.append(action("is.workflow.actions.openurl", WFInput=var(url, "URL")))
 
