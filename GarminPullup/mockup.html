@@ -196,10 +196,13 @@ function drawPullup(ctx, p, box) {
     muscle([[X(32), Y(9)], [X(32), Y(26), X(16), Y(44)], [X(10), Y(48)], [X(7), Y(40)], [X(4), Y(30)], [X(7), Y(22)], [X(14), Y(18)], [X(22), Y(17)], [X(31), Y(14)]], RED(on),
       [X(31), Y(10)], [X(28), Y(15)], [X(15), Y(45)], [X(5), Y(31)], 13, { bow });
     // infraspinatus (grey) on the shoulder blade
-    muscle([[X(11), Y(2)], [X(25), Y(0)], [X(29), Y(7)], [X(23), Y(12)], [X(12), Y(12)]], GREY, [X(12), Y(3)], [X(12), Y(11)], [X(28), Y(5)], [X(24), Y(12)], 6);
-    // teres minor (grey) and teres major (red) toward the armpit
-    muscle([[X(22), Y(8)], [X(30), Y(6)], [X(31), Y(10)], [X(23), Y(12)]], GREY, [X(22), Y(9)], [X(23), Y(12)], [X(30), Y(7)], [X(31), Y(10)], 3);
-    muscle([[X(18), Y(13)], [X(31), Y(10)], [X(32), Y(15)], [X(20), Y(19)]], RED(Math.min(1, on + .05)), [X(18), Y(14)], [X(20), Y(19)], [X(31), Y(11)], [X(32), Y(15)], 4);
+    const SOFT = { hi: SKIN_HI, lo: SKIN, fibre: "rgba(30,32,36,.14)" };
+    muscle([[X(11), Y(1)], [X(22), Y(-1)], [X(30), Y(4)], [X(31), Y(10)], [X(24), Y(13)], [X(13), Y(12)]], SOFT,
+      [X(12), Y(2)], [X(13), Y(11)], [X(30), Y(5)], [X(25), Y(12)], 7, { edge: .28 });                                  // infraspinatus + teres minor, one smooth sheet
+    // teres major (red): a smooth band from the shoulder blade's lower corner into the armpit
+    muscle([[X(17), Y(12)], [X(25), Y(11)], [X(32), Y(10)], [X(32.5), Y(15)], [X(25), Y(17)], [X(18), Y(18)]], RED(Math.min(1, on + .05)),
+      [X(17), Y(13)], [X(18), Y(17)], [X(32), Y(11)], [X(32), Y(15)], 5, { edge: .3 });
+    line(.6, .18); ctx.beginPath(); ctx.moveTo(X(11), Y(-1)); ctx.quadraticCurveTo(X(10), Y(9), X(16), Y(15)); ctx.stroke();       // inner edge of the shoulder blade
     // rhomboids (red): spine → inner edge of the shoulder blade, diagonal fibres
     muscle([[X(1.5), Y(-2)], [X(10), Y(1)], [X(11.5), Y(14)], [X(1.5), Y(20)]], RED(on), [X(1.5), Y(-1)], [X(1.5), Y(19)], [X(10), Y(1)], [X(11.5), Y(13)], 7, { bowY: 1 });
   });
@@ -233,7 +236,7 @@ function drawPullup(ctx, p, box) {
     const s = S[i], e = E[i], h = H[i], sd = i ? 1 : -1;
     const un = perp(s, e), fn = perp(e, h);
     // which way each segment's normal points: toward the lateral side (away from the midline)
-    const lat = Math.sign(un.x * (along(s, e, .5).x - 100)) || sd, latF = Math.sign(fn.x * (along(e, h, .5).x - 100)) || sd;
+    const lat = sd, latF = sd;   // fixed orientation per arm: the normals rotate smoothly with the arm and never flip side
     const U = (t, d) => off(along(s, e, t), un, d * lat), F = (t, d) => off(along(e, h, t), fn, d * latF);
     const dU = { x: (e.x - s.x) / L1, y: (e.y - s.y) / L1 }, dF = { x: (h.x - e.x) / L2, y: (h.y - e.y) / L2 };
     // a smooth capsule: rounded ends, belly in the middle; no seams or joint circles
@@ -253,6 +256,9 @@ function drawPullup(ctx, p, box) {
     };
     const shade = (pts, n) => { const g = ctx.createLinearGradient(...[pts[1][0], pts[1][1]], ...[pts[7][0], pts[7][1]]); g.addColorStop(0, SKIN_LO); g.addColorStop(.45, SKIN_HI); g.addColorStop(1, SKIN_LO); return g; };
 
+    // shoulder bridge: fills the joint between the torso and the upper arm in every pose
+    smoothTrace([[s.x - sd * 10, s.y - 4], [s.x + sd * 1, s.y - 9], U(.12, 8.5), U(.3, 7.5), U(.3, -7.5), U(.12, -8), [s.x - sd * 3, s.y + 12]]);
+    ctx.fillStyle = SKIN; ctx.fill();
     // forearm first (the upper arm overlaps it at the elbow)
     const fore = capsule(e, h, fnL, dF, L2, 10, 9.5, 6, .25, .1);
     ctx.save(); smoothTrace(fore); ctx.fillStyle = shade(fore); ctx.fill(); ctx.clip();
@@ -268,8 +274,8 @@ function drawPullup(ctx, p, box) {
     ctx.restore(); smoothTrace(upper); line(.8, .5); ctx.stroke();
 
     // deltoid: a single teardrop wrapping the shoulder, posterior half red
-    const dTip = U(.42, 1);
-    const delt = [[s.x - sd * 7, s.y - 2], [s.x - sd * 2, s.y - 7], [s.x + sd * 6, s.y - 4], U(.25, 9), dTip, U(.25, -7.5)];
+    const dTip = U(.44, 0);
+    const delt = [[s.x - sd * 8, s.y - 3], [s.x - sd * 1, s.y - 8.5], U(.02, 8.8), U(.28, 8.2), dTip, U(.28, -7.6), U(.02, -8.2), [s.x - sd * 6, s.y + 4]];
     ctx.save(); smoothTrace(delt); ctx.fillStyle = SKIN; ctx.fill(); ctx.clip();
     const dg = ctx.createLinearGradient(s.x + sd * 8, s.y, s.x - sd * 8, s.y);
     dg.addColorStop(0, "rgba(0,0,0,0)"); dg.addColorStop(.45, RED(.4 + .5 * p).hi); dg.addColorStop(1, RED(.4 + .5 * p).lo);
