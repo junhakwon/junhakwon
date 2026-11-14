@@ -51,7 +51,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   <section class="watches" aria-label="Watch face preview">
     <figure>
       <div class="bezel"><canvas id="active" width="416" height="416" aria-label="Active watch face with pull-up animation"></canvas></div>
-      <figcaption><b>Active</b><span>About 10 s after a wrist raise or button press</span></figcaption>
+      <figcaption><b>Active</b><span>About 10 s after a wrist raise · now: <strong id="tempo">very fast</strong></span></figcaption>
     </figure>
     <figure>
       <div class="bezel"><canvas id="aod" width="416" height="416" aria-label="Always-on low-power watch face"></canvas></div>
@@ -66,7 +66,7 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   <p class="note-motion">Your system asks for reduced motion, so the preview starts paused. Press play to see the rep.</p>
 
   <section class="specs" aria-label="Design details">
-    <div class="spec"><div class="k">Animation</div><div class="v">48 frames · 20 fps</div><p>One 2.4 s rep, looped while the watch is active. Original artwork, so it can be published.</p></div>
+    <div class="spec"><div class="k">Animation</div><div class="v">5-rep set · 10 s · 20 fps</div><p>Very fast, slow, fast, very fast, slow, then repeat: one full set per wrist raise. Original artwork, so it can be published.</p></div>
     <div class="spec"><div class="k">Background</div><div class="v">Pure black</div><p>Black AMOLED pixels are off, which saves battery and lets the figure float.</p></div>
     <div class="spec"><div class="k">Data</div><div class="v">Date · time · HR · steps · battery</div><p>Sample values in this preview. Any of them can be swapped or removed.</p></div>
     <div class="spec"><div class="k">Built with</div><div class="v">Connect IQ · Monkey C</div><p>Animation converted with Garmin's Monkey Motion tool and played by an animation layer.</p></div>
@@ -76,12 +76,25 @@ button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 <script>
 /* ---------- The lifter: an original, procedurally drawn figure seen from behind ---------- */
 const ease = (x) => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
-/* Rep timeline over one cycle u in [0,1): pull 0–.38, hold .38–.46, lower .46–.92, dead hang .92–1 */
+/* One rep over u in [0,1): pull 0–.38, hold .38–.46, lower .46–.92, dead hang .92–1 */
 function repPhase(u) {
   if (u < .38) return ease(u / .38);
   if (u < .46) return 1;
   if (u < .92) return 1 - ease((u - .46) / .46);
   return 0;
+}
+/* Tempo set, repeated: very fast, slow, fast, very fast, slow (seconds per rep) */
+const TEMPO = [{ name: "very fast", s: 1.0 }, { name: "slow", s: 3.2 }, { name: "fast", s: 1.6 }, { name: "very fast", s: 1.0 }, { name: "slow", s: 3.2 }];
+const CYCLE = TEMPO.reduce((a, r) => a + r.s, 0);
+function phaseAt(t) {
+  t = ((t % CYCLE) + CYCLE) % CYCLE;
+  for (const r of TEMPO) { if (t < r.s) return repPhase(t / r.s); t -= r.s; }
+  return 0;
+}
+function tempoAt(t) {
+  t = ((t % CYCLE) + CYCLE) % CYCLE;
+  for (const r of TEMPO) { if (t < r.s) return r.name; t -= r.s; }
+  return TEMPO[0].name;
 }
 function ik(S, H, L1, L2, side) {
   const dx = H.x - S.x, dy = H.y - S.y; let d = Math.hypot(dx, dy);
@@ -91,65 +104,110 @@ function ik(S, H, L1, L2, side) {
   // Two possible elbows; keep the lower one so each arm forms a v (elbow pointing down) as the lifter rises.
   const e1 = { x: S.x + L1 * Math.cos(base + a), y: S.y + L1 * Math.sin(base + a) };
   const e2 = { x: S.x + L1 * Math.cos(base - a), y: S.y + L1 * Math.sin(base - a) };
-  const low = e1.y > e2.y ? e1 : e2, high = e1.y > e2.y ? e2 : e1;
-  return Math.abs(e1.y - e2.y) < 0.5 ? (side * (e1.x - S.x) > 0 ? e1 : e2) : low;
+  if (Math.abs(e1.y - e2.y) < 0.5) return side * (e1.x - S.x) > 0 ? e1 : e2;
+  return e1.y > e2.y ? e1 : e2;
 }
-function drawPullup(ctx, p, box, opt = {}) {
-  // box: {x, y, s} draws the 200-unit figure scaled by s/200 with its top-left at x,y
+function drawPullup(ctx, p, box) {
   const k = box.s / 200; ctx.save(); ctx.translate(box.x, box.y); ctx.scale(k, k);
-  const skin = opt.skin || "#d8dbe0", shade = "#8f949c", dark = "#5d626a";
-  const red = (a) => `rgba(229,64,47,${a})`;
-  const glow = .45 + .45 * p;
+  const SKIN = "#d6d9de", SKIN_HI = "#eef0f3", SKIN_LO = "#a3a8b0", HAIR = "#4a4f57";
+  const glow = .45 + .5 * p;
+  const red = (a) => `rgba(222,58,44,${a})`, redHi = (a) => `rgba(255,140,120,${a})`;
+  const line = (w, a = .28) => { ctx.lineWidth = w; ctx.strokeStyle = `rgba(20,22,26,${a})`; };
   const L1 = 30, L2 = 29, barY = 34;
-  const H = [{ x: 56, y: barY }, { x: 144, y: barY }];   // wide grip, hands outside the shoulders
+  const H = [{ x: 56, y: barY }, { x: 144, y: barY }];
   const hangY = barY + Math.sqrt(Math.pow(L1 + L2 - 1.5, 2) - 256);
-  const sy = hangY + (43 - hangY) * p;              // shoulder height: chin clears the bar at the top
-  const sway = Math.sin(p * Math.PI) * 1.2;
-  const S = [{ x: 72 + sway * .2, y: sy }, { x: 128 + sway * .2, y: sy }];
+  const sy = hangY + (43 - hangY) * p;
+  const S = [{ x: 72, y: sy }, { x: 128, y: sy }];
+  const E = [ik(S[0], H[0], L1, L2, -1), ik(S[1], H[1], L1, L2, 1)];
+  const waistY = sy + 44, hipY = sy + 54;
+
+  // helpers: tapered limb, muscle bulge along a limb, closed path
+  const taper = (a, b, wa, wb, fill) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1, nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
+    ctx.fillStyle = fill; ctx.beginPath();
+    ctx.moveTo(a.x + nx * wa / 2, a.y + ny * wa / 2); ctx.lineTo(b.x + nx * wb / 2, b.y + ny * wb / 2);
+    ctx.lineTo(b.x - nx * wb / 2, b.y - ny * wb / 2); ctx.lineTo(a.x - nx * wa / 2, a.y - ny * wa / 2); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(a.x, a.y, wa / 2, 0, 7); ctx.arc(b.x, b.y, wb / 2, 0, 7); ctx.fill();
+  };
+  const bulge = (a, b, t, len, wid, fill, off = 0, stroke = true) => {
+    const ang = Math.atan2(b.y - a.y, b.x - a.x), cx = a.x + (b.x - a.x) * t - Math.sin(ang) * off, cy = a.y + (b.y - a.y) * t + Math.cos(ang) * off;
+    ctx.fillStyle = fill; ctx.beginPath(); ctx.ellipse(cx, cy, len / 2, wid / 2, ang, 0, 7); ctx.fill();
+    if (stroke) { line(.6, .22); ctx.stroke(); }
+  };
+  const path = (pts, fill, strokeA = .25) => {
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) { const q = pts[i]; q.length === 4 ? ctx.quadraticCurveTo(q[0], q[1], q[2], q[3]) : ctx.lineTo(q[0], q[1]); }
+    ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); if (strokeA) { line(.7, strokeA); ctx.stroke(); }
+  };
 
   // bar and uprights
   ctx.fillStyle = "#8b9097"; ctx.fillRect(18, barY - 3, 164, 6);
   ctx.fillStyle = "#c9ccd1"; ctx.fillRect(12, barY - 12, 9, 26); ctx.fillRect(179, barY - 12, 9, 26);
 
-  const limb = (a, b, w, color) => { ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
-  const E = [ik(S[0], H[0], L1, L2, -1), ik(S[1], H[1], L1, L2, 1)];
+  // legs: knees bent, ankles crossed behind
+  const kneeY = hipY + 27 + 2 * (1 - p), footY = kneeY + 20, swing = Math.sin(p * Math.PI) * 3;
+  const legs = [[{ x: 91, y: hipY + 4 }, { x: 89 - swing, y: kneeY }, { x: 104, y: footY }], [{ x: 109, y: hipY + 4 }, { x: 111 + swing, y: kneeY }, { x: 96, y: footY + 3 }]];
+  legs.forEach(([hp, kn, ft]) => {
+    taper(hp, kn, 15, 10, SKIN); bulge(hp, kn, .55, 22, 12, SKIN_HI, 0);          // hamstrings
+    line(.6, .25); ctx.beginPath(); ctx.moveTo((hp.x + kn.x) / 2, hp.y + 6); ctx.lineTo((hp.x + kn.x) / 2 + (kn.x - hp.x) * .3, kn.y - 4); ctx.stroke();
+    taper(kn, ft, 9.5, 5.5, SKIN_LO); bulge(kn, ft, .3, 12, 9, "#b6bbc3", 0);      // calves
+    ctx.fillStyle = "#8d929a"; ctx.beginPath(); ctx.ellipse(ft.x, ft.y + 3, 3.2, 5, 0, 0, 7); ctx.fill();
+  });
 
-  // legs: knees bent, ankles crossed behind (drawn first, under the torso)
-  const hipY = sy + 54, kneeY = hipY + 26 + 2 * (1 - p), footY = kneeY + 19;
-  const legSwing = Math.sin(p * Math.PI) * 3;
-  const legs = [[{ x: 90, y: hipY }, { x: 88 - legSwing, y: kneeY }, { x: 104, y: footY }], [{ x: 110, y: hipY }, { x: 112 + legSwing, y: kneeY }, { x: 95, y: footY + 3 }]];
-  legs.forEach(([hp, kn, ft]) => { limb(hp, kn, 15, skin); limb(kn, ft, 11, shade); limb(hp, kn, 3, "rgba(0,0,0,.18)"); });
-  // forearms then upper arms
-  [0, 1].forEach(i => { limb(E[i], H[i], 8.5, skin); limb(S[i], E[i], 11, skin); limb(S[i], E[i], 7, red(.35 + .35 * p)); });
-  // hands
-  ctx.fillStyle = skin; H.forEach(h => { ctx.beginPath(); ctx.ellipse(h.x, h.y + 1, 5, 4.5, 0, 0, Math.PI * 2); ctx.fill(); });
+  // torso base with side shading
+  const g = ctx.createLinearGradient(S[0].x - 6, 0, S[1].x + 6, 0);
+  g.addColorStop(0, SKIN_LO); g.addColorStop(.25, SKIN); g.addColorStop(.5, SKIN_HI); g.addColorStop(.75, SKIN); g.addColorStop(1, SKIN_LO);
+  path([[S[0].x - 5, sy - 3], [S[1].x + 5, sy - 3], [S[1].x + 3, sy + 12], [S[1].x - 2, sy + 30, 113, waistY], [115, hipY + 2], [85, hipY + 2], [87, waistY], [S[0].x + 2, sy + 30, S[0].x - 3, sy + 12]], g, .3);
 
-  // torso: V-taper from shoulders to waist
-  const waistY = sy + 46;
-  ctx.fillStyle = skin; ctx.beginPath();
-  ctx.moveTo(S[0].x - 5, sy - 3); ctx.lineTo(S[1].x + 5, sy - 3);
-  ctx.lineTo(S[1].x + 2, sy + 12); ctx.quadraticCurveTo(S[1].x - 2, sy + 30, 113, waistY); ctx.lineTo(115, hipY + 2);
-  ctx.lineTo(85, hipY + 2); ctx.lineTo(87, waistY); ctx.quadraticCurveTo(S[0].x + 2, sy + 30, S[0].x - 2, sy + 12); ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = "rgba(0,0,0,.18)"; ctx.lineWidth = 1; ctx.stroke();
-  // lats
-  ctx.fillStyle = red(glow);
-  [-1, 1].forEach(sd => { ctx.beginPath(); ctx.moveTo(100 + sd * 25, sy + 8); ctx.quadraticCurveTo(100 + sd * 26, sy + 24, 100 + sd * 12, waistY - 3);
-    ctx.lineTo(100 + sd * 6, sy + 34); ctx.lineTo(100 + sd * 8, sy + 16); ctx.quadraticCurveTo(100 + sd * 16, sy + 9, 100 + sd * 25, sy + 8); ctx.fill(); });
-  // trapezius
-  ctx.fillStyle = red(Math.min(1, glow + .05)); ctx.beginPath();
-  ctx.moveTo(100, sy - 13); ctx.lineTo(S[1].x - 6, sy - 1); ctx.lineTo(108, sy + 6); ctx.lineTo(100, sy + 20); ctx.lineTo(92, sy + 6); ctx.lineTo(S[0].x + 6, sy - 1); ctx.closePath(); ctx.fill();
-  // rear delts
-  ctx.fillStyle = red(.4 + .4 * p); S.forEach(s => { ctx.beginPath(); ctx.ellipse(s.x, s.y + 2, 7, 6, 0, 0, Math.PI * 2); ctx.fill(); });
-  // spine and lower-back definition
-  ctx.strokeStyle = "rgba(0,0,0,.28)"; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(100, sy + 4); ctx.lineTo(100, hipY - 2); ctx.stroke();
-  ctx.strokeStyle = "rgba(0,0,0,.14)"; ctx.beginPath(); ctx.moveTo(95, waistY - 6); ctx.lineTo(94, hipY - 4); ctx.moveTo(105, waistY - 6); ctx.lineTo(106, hipY - 4); ctx.stroke();
-  // shorts
-  ctx.fillStyle = "#111214"; ctx.fillRect(83, hipY - 4, 34, 15); ctx.strokeStyle = "#3b3f46"; ctx.lineWidth = 1; ctx.strokeRect(83.5, hipY - 3.5, 33, 14);
+  // back muscles, both sides
+  [-1, 1].forEach(sd => {
+    const X = (dx) => 100 + sd * dx;
+    // latissimus dorsi: armpit sweep down to the lower back
+    path([[X(26), sy + 9], [X(27), sy + 26, X(12), waistY - 2], [X(7), sy + 36], [X(9), sy + 18], [X(17), sy + 11, X(26), sy + 9]], red(glow), .35);
+    line(.6, .2); ctx.beginPath(); ctx.moveTo(X(22), sy + 14); ctx.quadraticCurveTo(X(19), sy + 26, X(12), sy + 36); ctx.stroke();   // lat striation
+    ctx.strokeStyle = redHi(.35 * glow); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(X(24), sy + 12); ctx.quadraticCurveTo(X(24), sy + 24, X(15), sy + 34); ctx.stroke();
+    // teres major + infraspinatus over the shoulder blade
+    path([[X(10), sy + 4], [X(21), sy + 2], [X(25), sy + 9], [X(17), sy + 15], [X(10), sy + 13]], red(.35 + .5 * p), .35);
+    path([[X(19), sy + 10], [X(26), sy + 8], [X(25), sy + 13], [X(19), sy + 15]], red(Math.min(1, glow + .05)), .3);
+    // erector spinae column
+    path([[X(2.5), sy + 22], [X(8), sy + 30, X(7), hipY - 2], [X(2.5), hipY - 2]], SKIN_HI, .3);
+    // external oblique edge
+    line(.7, .22); ctx.beginPath(); ctx.moveTo(X(13), waistY - 4); ctx.quadraticCurveTo(X(15), hipY - 6, X(14), hipY); ctx.stroke();
+  });
+  // trapezius: upper, middle and lower fibres as one kite
+  path([[100, sy - 13], [S[1].x - 6, sy - 2], [109, sy + 4], [104, sy + 14], [100, sy + 24], [96, sy + 14], [91, sy + 4], [S[0].x + 6, sy - 2]], red(Math.min(1, glow + .08)), .35);
+  line(.6, .2); ctx.beginPath(); ctx.moveTo(92, sy); ctx.lineTo(100, sy + 7); ctx.lineTo(108, sy); ctx.stroke();
+  // spine groove
+  line(1.3, .3); ctx.beginPath(); ctx.moveTo(100, sy + 2); ctx.lineTo(100, hipY - 2); ctx.stroke();
+
+  // shorts: waistband, seat seam, two leg openings
+  const sh = { top: hipY - 7, seat: hipY + 9, hem: hipY + 18 };
+  path([[84, sh.top], [116, sh.top], [119, sh.top + 8], [121, sh.hem - 1], [104, sh.hem + 2], [100, sh.seat + 2], [96, sh.hem + 2], [79, sh.hem - 1], [81, sh.top + 8]], "#2b2e34", .5);
+  ctx.fillStyle = "#3d4149"; ctx.fillRect(84, sh.top, 32, 3.2);                                            // waistband
+  ctx.strokeStyle = "#555a63"; ctx.lineWidth = .8; ctx.beginPath(); ctx.moveTo(100, sh.top + 3); ctx.lineTo(100, sh.seat + 2); ctx.stroke(); // seat seam
+  ctx.strokeStyle = "rgba(229,64,47,.9)"; ctx.lineWidth = 1.4;                                              // side stripes
+  ctx.beginPath(); ctx.moveTo(82, sh.top + 5); ctx.lineTo(80, sh.hem - 2); ctx.moveTo(118, sh.top + 5); ctx.lineTo(120, sh.hem - 2); ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,.08)"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(89, sh.top + 6); ctx.quadraticCurveTo(92, sh.seat - 2, 98, sh.seat); ctx.moveTo(111, sh.top + 6); ctx.quadraticCurveTo(108, sh.seat - 2, 102, sh.seat); ctx.stroke(); // fabric folds
+
+  // arms: forearm, then upper arm with triceps, then deltoid cap
+  [0, 1].forEach(i => {
+    const s = S[i], e = E[i], h = H[i];
+    taper(e, h, 8.5, 6, SKIN);
+    bulge(e, h, .28, 13, 8.5, red(.3 + .35 * p));                 // forearm flexors / brachioradialis
+    taper(s, e, 12, 8.5, SKIN);
+    bulge(s, e, .5, 22, 9.5, SKIN_HI);                            // triceps (long head)
+    bulge(s, e, .62, 13, 5, red(.35 + .45 * p), i ? -2.2 : 2.2);  // brachialis working on the pull
+    line(.6, .25); ctx.beginPath(); ctx.moveTo(s.x + (e.x - s.x) * .45, s.y + (e.y - s.y) * .45); ctx.lineTo(s.x + (e.x - s.x) * .8, s.y + (e.y - s.y) * .8); ctx.stroke();
+    ctx.fillStyle = red(.45 + .45 * p); ctx.beginPath(); ctx.ellipse(s.x + (i ? 2 : -2), s.y + 2, 8, 7, 0, 0, 7); ctx.fill(); line(.7, .3); ctx.stroke();   // rear deltoid
+    ctx.fillStyle = SKIN; ctx.beginPath(); ctx.ellipse(h.x, h.y + 1, 5, 4.8, 0, 0, 7); ctx.fill(); line(.6, .25); ctx.stroke();                                // hand
+  });
+
   // neck and head (from behind)
-  ctx.fillStyle = skin; ctx.fillRect(95, sy - 22, 10, 12);
-  ctx.beginPath(); ctx.ellipse(100, sy - 28, 10.5, 12.5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = dark; ctx.beginPath(); ctx.ellipse(100, sy - 32, 10.5, 9, 0, Math.PI, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = SKIN; ctx.fillRect(95, sy - 22, 10, 12);
+  ctx.beginPath(); ctx.ellipse(100, sy - 28, 10.5, 12.5, 0, 0, 7); ctx.fill(); line(.6, .2); ctx.stroke();
+  ctx.fillStyle = HAIR; ctx.beginPath(); ctx.ellipse(100, sy - 32, 10.5, 9, 0, Math.PI, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.ellipse(100, sy - 31, 10.5, 6, 0, 0, Math.PI); ctx.fill();
+  ctx.fillStyle = SKIN_LO; [-1, 1].forEach(sd => { ctx.beginPath(); ctx.ellipse(100 + sd * 10.5, sy - 27, 2, 3.5, 0, 0, 7); ctx.fill(); }); // ears
   ctx.restore();
 }
 
@@ -188,19 +246,21 @@ const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let playing = !reduce, t0 = performance.now(), held = 0;
 const playBtn = document.getElementById("play");
 playBtn.setAttribute("aria-pressed", String(playing)); playBtn.textContent = playing ? "Pause animation" : "Play animation";
+const tempoEl = document.getElementById("tempo");
 function frame(now) {
-  const u = playing ? ((now - t0) / 2400) % 1 : held;
-  if (playing) held = u;
-  drawActive(A, repPhase(u));
+  const t = playing ? (now - t0) / 1000 : held;
+  if (playing) held = t;
+  drawActive(A, phaseAt(t));
+  const name = tempoAt(t); if (tempoEl.textContent !== name) tempoEl.textContent = name;
   requestAnimationFrame(frame);
 }
-playBtn.onclick = () => { playing = !playing; if (playing) t0 = performance.now() - held * 2400;
+playBtn.onclick = () => { playing = !playing; if (playing) t0 = performance.now() - held * 1000;
   playBtn.setAttribute("aria-pressed", String(playing)); playBtn.textContent = playing ? "Pause animation" : "Play animation"; };
 const dataBtn = document.getElementById("data");
 dataBtn.onclick = () => { showData = !showData; dataBtn.setAttribute("aria-pressed", String(showData)); dataBtn.textContent = showData ? "Hide data" : "Show data"; };
-if (reduce) held = .4;
+if (reduce) held = 0.4;
 drawAod(B); setInterval(() => drawAod(B), 30000);
 document.fonts?.ready.then(() => drawAod(B));
 requestAnimationFrame(frame);
-window.drawPullup = drawPullup; window.repPhase = repPhase;
+window.drawPullup = drawPullup; window.phaseAt = phaseAt; window.CYCLE = CYCLE;
 </script>
