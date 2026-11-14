@@ -1,0 +1,7 @@
+<!--
+  The pull-up animation. Monkey Motion (in the Connect IQ SDK) turns pullup-240.mp4 into pullup.mm;
+  save pullup.mm in this folder, next to this file. The code refers to it as Rez.Drawables.Pullup.
+-->
+<drawables>
+    <animation id="Pullup" filename="pullup.mm" />
+</drawables>

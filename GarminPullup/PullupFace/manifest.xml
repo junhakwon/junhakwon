@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<iq:manifest version="3" xmlns:iq="http://www.garmin.com/xml/connectiq">
+    <iq:application id="bfe81c01b78545dfbfe06a14eabf4a44" type="watchface" name="@Strings.AppName" entry="PullupApp" launcherIcon="@Drawables.LauncherIcon" minApiLevel="3.4.0">
+        <iq:products>
+            <iq:product id="fr265"/>
+        </iq:products>
+        <iq:permissions/>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+        <iq:barrels/>
+    </iq:application>
+</iq:manifest>
