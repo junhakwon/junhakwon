@@ -20,7 +20,7 @@
 | 파일 서명 (`shortcuts sign`) | **불가** — macOS 전용. iOS 15+는 서명 안 된 파일을 가져오지 못함. 사용자는 Mac 없음 → GitHub Actions macOS 러너 서명 또는 iPhone 앱(Jellycuts 등) 경로 검토 |
 | 구조 검증 | 가능 (plist 파싱, 액션 식별자·변수 참조 점검) |
 | 실기기 테스트 | 불가 (사용자 iPhone에서 직접) |
-| Gmail | 커넥터 설치됨, **연결 미완료** |
+| Gmail | **연결됨** — `send_message`(첨부 지원, 25MB 이하) 사용 가능. 수신 주소는 첫 발송 전 사용자 확인 필요 |
 | 사용자 PC 폴더 (`C:\Users\준하\Desktop\AI AGENT\Shortcut Creator`) | 미연결 — 현재 GitHub 저장소의 이 폴더에 저장 |
 
 ## 폴더 구조
