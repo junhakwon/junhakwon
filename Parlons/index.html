@@ -346,7 +346,7 @@ function renderHome() {
   const list = $(`<section class="units" aria-label="Units"></section>`);
   UNITS.forEach((u, idx) => {
     const best = S.best[u.id] || 0;
-    const open = idx === 0 || (S.best[UNITS[idx - 1].id] || 0) > 0;
+    const open = true;
     const b = $(`<button class="unit" ${open ? "" : "disabled"}>
       <span class="pic" aria-hidden="true">${u.pic}</span>
       <span><span class="no">UNITÉ ${idx + 1}</span><h3>${esc(u.title)}</h3><span class="sub">${esc(u.sub)} · ${u.items.length} words${open ? "" : " · finish the unit above to open"}</span></span>
