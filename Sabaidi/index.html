@@ -203,12 +203,8 @@ const UNITS = [
     { t: "ໂຊກດີ", ro: "sok di", pic: "👋🍀", en: "Goodbye (good luck)", ex: "ໂຊກດີເດີ", exro: "sok di doe", exen: "Take care!" },
     { t: "ລາຕີສະຫວັດ", ro: "latisawat", pic: "🌙", en: "Good night" } ] },
 ];
-/* Native-speaker recordings (Lingua Libre, Wikimedia Commons, CC BY-SA 4.0), published next to this page. */
-const AUDIO = {
-  "ສະບາຍດີ": "audio/sabaidi.mp3", "ປະເທດລາວ": "audio/pathet-lao.mp3", "ລາວ": "audio/lao.mp3", "ພາສາ": "audio/phasa.mp3",
-  "ວຽງຈັນ": "audio/viangchan.mp3", "ຫຼວງພະບາງ": "audio/luang-phabang.mp3", "ແຂວງ": "audio/khaeng.mp3",
-  "ອາຊີອາຄະເນ": "audio/asi-akhane.mp3", "ຮ້ອຍ": "audio/hoi.mp3",
-};
+/* Native-speaker recordings, published next to this page. Empty until real clips are added. */
+const AUDIO = {};   // native recordings go here as "ລາວ": "audio/file.mp3" once they are available
 const ALL = UNITS.flatMap(u => u.items.map(it => ({ ...it, unit: u.id })));
 const find = (t) => ALL.find(x => x.t === t);
 const BOX_DAYS = [0, 0, 1, 3, 7, 16];
@@ -407,11 +403,8 @@ function renderSettings() {
         <option value="auto">Automatic</option>${ttsLao ? `<option value="claude">Claude voice</option>` : ""}
         ${vs.map(v => `<option value="${esc(v.voiceURI)}">${esc(v.name)}</option>`).join("")}</select>
         <button class="chip primary" id="voice-test">🔊 Test</button></div>`
-      : `<p class="note"><b>No Lao voice on this device.</b> Words marked 🎧 play a real native-speaker recording; the others show Lao script and romanization, and their listening exercises become reading exercises.</p>`}
-    <p class="note">🎧 Native recordings (${Object.keys(AUDIO).length} words, mostly in “Laos on the map”): spoken by
-      <a href="https://commons.wikimedia.org/wiki/Category:Lingua_Libre_pronunciation-lao" target="_blank" rel="noopener">RenWikiLA</a>
-      for Lingua Libre, via Wikimedia Commons, licensed
-      <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>. These are all the Lao word recordings that exist there today.</p>
+      : `<p class="note"><b>No Lao voice on this device.</b> Lessons show Lao script and romanization, and the listening exercises become reading exercises. If a Lao voice becomes available here, Sabaidi uses it automatically.</p>`}
+    ${Object.keys(AUDIO).length ? `<p class="note">🎧 ${Object.keys(AUDIO).length} words have native-speaker recordings.</p>` : ""}
   </section>`);
   p.querySelector("#roman").onchange = (e) => { S.roman = e.target.checked; save(); };
   const sel = p.querySelector("#voice-pick");
