@@ -55,6 +55,8 @@ The app asks every time. It never saves or pre-fills a start, so you can start f
 5. **Pixelate** to a 64-cell grid by majority vote. This removes texture and tiny details the street grid can't draw anyway. The result is shown as blocks with the outline on top.
 6. Trace the outer edge (Moore-neighbour tracing), smooth the staircase (Ramer–Douglas–Peucker) and resample to 400 points.
 
+**Animal shapes:** 8 built-in silhouettes (cat, dog, rabbit, bird, fish, whale, turtle, elephant), drawn on a 100 × 100 grid so every feature (ears, tails, legs, trunk) is at least ~8% of the drawing wide and still shows on a street grid. Tapping one uses it as the picture. **Which animals fit here?** downloads the area around the start point (or the place under Where) once, tries all 8 on the same streets, and shows the four that fit best, so it needs no picture and only one download.
+
 **Paint the shape** opens the picture full screen with the detected shape painted on in blue. The runner can paint and erase with a finger (adjustable brush, undo, clear, auto-detect again). What they paint replaces steps 2–4 and goes straight to pixelating.
 
 ### 3. The mountain question
@@ -64,6 +66,14 @@ The **Draw my route** button stays off until the runner answers "Is it okay if t
 - `highway=path`, `track` or `bridleway` with no surface tag, which in Seoul is almost always a mountain or park trail.
 
 "No" removes those paths from the network entirely. "Yes" keeps them and counts their distance separately, because trail kilometres are slower.
+
+### Speed
+Almost all the waiting is downloading street data, so:
+- **Compact downloads.** The query asks only for the street lines and which of three kinds each one is (ordinary street, big road without a mapped sidewalk, trail), with no names or other tags, using count markers to separate the groups. Trails aren't downloaded at all when the runner said no to mountains.
+- **Remembered areas.** Downloaded areas are kept on the phone (IndexedDB) for 30 days, up to 60 areas, so searching the same city or The World again doesn't download them again.
+- **Smaller areas.** Place searches try only the three largest drawing sizes (bigger drawings match better) and load only as much map as those need (6 × 6 km for 20 km routes, less for shorter ones).
+- **Distance map.** Each area gets a 25 m grid of "distance to the nearest street" worked out once, so scoring thousands of placements is a lookup per point instead of a search. It also measures to the street itself, not just its corners.
+- **Busy servers are skipped** for a minute after an error.
 
 ### 4. Loading streets
 A single Overpass query fetches every way a runner can use in a 6 × 6 km square around the start: footways, paths, residential streets, park paths, steps, and larger roads. Motorways and trunk roads are never fetched. Ways tagged `foot=no` or `access=private` are dropped. Big roads without a mapped sidewalk get a 25% cost penalty so the router prefers quieter streets. The network is turned into a graph (intersections and the segments between them), and only the largest connected piece is kept, so the route can never get stuck on an island.
@@ -139,6 +149,9 @@ All are free and need no key. If the app ever gets lots of users, the public Ove
 - a place search shows results while it's still running, with a Stop button and a pop-up for 90%+ matches
 - a photo with uneven light switches to Photo mode and finds the object
 - painting a shape by hand replaces the detected one
+- the Drawing / Photo buttons don't touch the Where box
+- the cat shape makes a route, and Which animals fit here? ranks animals after a single download
+- searching the same places again downloads nothing
 - the Draw button stays off until the start, the picture and the mountain answer are all given
 - no script errors
 
@@ -155,7 +168,7 @@ The GitHub Action `.github/workflows/route-art.yml` runs this on every push that
 | 1 | App logic: tracing, fitting, routing, city fallback, mountain filter, time estimate, GPX | Claude | Done |
 | 2 | Automated tests with a fake city | Claude | Done, 15/15 pass |
 | 3 | CI that tests every push and publishes to GitHub Pages | Claude | Done |
-| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 37/37 checks pass |
+| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 44/44 checks pass |
 | 4 | Merge the branch into the default branch | You (GitHub app or website, tablet is fine) | To do |
 | 5 | Turn on Pages once: Settings → Pages → Source → **GitHub Actions**, then re-run the "Route Art" workflow | You (website) | To do |
 | 6 | Open `https://junhakwon.github.io/junhakwon/RouteArt/` in Safari on your iPhone, then Share → Add to Home Screen | You | To do |
