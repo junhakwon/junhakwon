@@ -38,10 +38,13 @@ function fakeCity(bb, opts) { // bb = [south, west, north, east]
   return { elements: [...ways, ...nodes.values()] };
 }
 
+// neighborhoods the fake place search returns: [name, metres east, metres north]
+const PLACES = [["망원동", 6500, 0], ["성수동", -6500, 0], ["연남동", 0, 6500], ["사당동", 0, -6500], ["잠실동", 6000, 6000], ["목동", -6000, -6000]];
+
 const HEART = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="white"/>
 <path d="M150 260 C 40 180 10 120 40 75 C 70 30 130 40 150 90 C 170 40 230 30 260 75 C 290 120 260 180 150 260 Z" fill="black"/></svg>`;
 
-async function scenario(browser, name, { mountains, lake, maxKm = 20, after }) {
+async function scenario(browser, name, { mountains, lake, maxKm = 20, after, where, noStart }) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block", acceptDownloads: true });
   const page = await context.newPage();
   const errors = [];
@@ -53,9 +56,14 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after }) {
     if (u.includes("leaflet.min.css")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.css")), contentType: "text/css" });
     if (u.includes("/interpreter")) {
       const q = decodeURIComponent(r.request().postData().slice(5));
+      if (q.includes("place~")) return json({ elements: PLACES.map(([name, dx, dy], i) => ({ type: "node", id: 9e6 + i, lat: LAT0 + dy / ky, lon: LON0 + dx / kx, tags: { place: "suburb", name } })) });
       return json(fakeCity(q.match(/\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\)/).slice(1).map(Number), { lake }));
     }
-    if (u.includes("nominatim") && u.includes("/search")) return json([{ lat: String(LAT0), lon: String(LON0) }]);
+    if (u.includes("nominatim") && u.includes("/search")) {
+      if (new URL(u).searchParams.get("q") === "Seoul")
+        return json([{ osm_type: "relation", osm_id: 2297418, name: "Seoul", lat: String(LAT0), lon: String(LON0), boundingbox: ["37.41", "37.70", "126.76", "127.18"] }]);
+      return json([{ lat: String(LAT0), lon: String(LON0) }]);
+    }
     if (u.includes("nominatim") && u.includes("/reverse")) return json({ address: { city: "서울특별시" }, boundingbox: ["37.41", "37.70", "126.76", "127.18"] });
     if (u.includes("open-meteo")) { const n = new URL(u).searchParams.get("latitude").split(",").length; return json({ elevation: Array.from({ length: n }, (_, i) => 30 + 10 * Math.sin(i / 5)) }); }
     if (u.startsWith(PAGE)) return r.continue();
@@ -63,16 +71,20 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after }) {
   });
   await page.goto(PAGE);
   if (!(await page.isDisabled("#goBtn"))) throw new Error("button should start disabled");
-  await page.fill("#addr", "서울시청");
-  await page.click("#findBtn");
-  await page.waitForFunction(() => document.getElementById("startStatus").textContent.startsWith("Start"));
+  if (!noStart) {
+    await page.fill("#addr", "서울시청");
+    await page.click("#findBtn");
+    await page.waitForFunction(() => document.getElementById("startStatus").textContent.startsWith("Start"));
+  }
+  if (where) await page.fill("#where", where);
   await page.setInputFiles("#file", { name: "heart.svg", mimeType: "image/svg+xml", buffer: Buffer.from(HEART) });
   await page.waitForTimeout(300);
   if (!(await page.isDisabled("#goBtn"))) throw new Error("button must wait for the mountain question");
   await page.fill("#maxKm", String(maxKm));
   await page.check(`input[name=mtn][value=${mountains ? "yes" : "no"}]`);
   await page.click("#goBtn");
-  await page.waitForFunction(() => !document.getElementById("goStatus").dataset.busy && /Done|Couldn|busy/.test(document.getElementById("goStatus").textContent), null, { timeout: 120000 });
+  await page.waitForFunction(() => { const g = document.getElementById("goStatus"); return !g.dataset.busy && (/^Done/.test(g.textContent) || g.classList.contains("err")); }, null, { timeout: 120000 })
+    .catch(async err => { throw new Error(`${name}: no result. Status: ${await page.textContent("#goStatus")} ${errors.join("; ")}`); });
   await page.waitForTimeout(500);
   const out = await page.evaluate(() => ({
     status: goStatus.textContent, note: areaNote.textContent,
@@ -179,15 +191,21 @@ async function installCheck(browser) {
   ok(a.status.startsWith("Done"), `${a.name}: finished (${a.status})`);
   ok(a.match >= 70, `${a.name}: shape match ${a.match}% >= 70%`);
   ok(a.km > 2 && a.km <= 20, `${a.name}: distance ${a.km} km within 20 km`);
-  ok(a.note.includes("neighborhood"), `${a.name}: stayed in the neighborhood`);
+  ok(a.note.includes("around your start"), `${a.name}: stayed near the start point`);
   const b = await scenario(browser, "neighborhood, streets only", { mountains: false });
   ok(b.status.startsWith("Done"), `${b.name}: finished`);
   ok(b.trailKm === 0, `${b.name}: no trail used (${b.trailKm} km)`);
   const c = await scenario(browser, "lake around start, city fallback", { mountains: true, lake: true });
   ok(c.status.startsWith("Done"), `${c.name}: finished`);
-  ok(c.note.includes("서울특별시"), `${c.name}: moved elsewhere in the city`);
+  ok(c.note.includes("서울특별시") && c.options.some(o => PLACES.some(([n]) => o.includes(n))), `${c.name}: searched other places in the city`);
   ok(c.match >= 70, `${c.name}: shape match ${c.match}% >= 70%`);
   const d = await scenario(browser, "short limit", { mountains: true, maxKm: 6 });
+  const e = await scenario(browser, "Where: Seoul, no start point", { mountains: false, where: "Seoul", noStart: true });
+  ok(e.status.startsWith("Done"), `${e.name}: finished (${e.status})`);
+  ok(e.note.includes("Seoul") && e.options.some(o => PLACES.some(([n]) => o.includes(n))), `${e.name}: options are named places in Seoul`);
+  ok(e.match >= 70, `${e.name}: shape match ${e.match}% >= 70%`);
+  const w = await scenario(browser, "Where: The World", { mountains: true, where: "The World", maxKm: 8 });
+  ok(w.status.startsWith("Done") && w.note.includes("the world") && w.options.length, `${w.name}: found cities (${w.options.join(", ")})`);
   ok(d.status.startsWith("Done") && d.km <= 6, `${d.name}: respects a 6 km limit (${d.km} km)`);
   const f = a.after;
   ok(f.done > 0 && f.left > 0, `follow: progress shown (${f.done} km done, ${f.left} km to go)`);
@@ -201,9 +219,9 @@ async function installCheck(browser) {
   ok(i.sw, "install: offline service worker active");
   ok(i.display === "standalone" && i.icons && i.touchIcon, "install: manifest and home-screen icons in place");
   ok(i.tip, "install: iPhone Safari shows the Add to Home Screen tip");
-  for (const s of [a, b, c, d]) ok(!s.errors.length, `${s.name}: no script errors ${s.errors.join("; ")}`);
+  for (const s of [a, b, c, d, e, w]) ok(!s.errors.length, `${s.name}: no script errors ${s.errors.join("; ")}`);
   await browser.close(); server.close();
   for (const [pass, msg] of checks) console.log(pass ? "PASS" : "FAIL", msg);
-  for (const s of [a, b, c, d]) console.log(`  ${s.name}: ${s.options.join(" | ")}`);
+  for (const s of [a, b, c, d, e]) console.log(`  ${s.name}: ${s.options.join(" | ")}`);
   process.exit(checks.every(c => c[0]) ? 0 : 1);
 })().catch(e => { console.error(e); process.exit(1); });

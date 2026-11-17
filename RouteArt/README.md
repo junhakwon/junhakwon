@@ -76,18 +76,22 @@ Every combination of these is scored:
 Each placement is scored by the RMS distance from 72 points on the outline to the nearest walkable intersection, capped at 350 m (a spatial grid index makes this fast). Shapes over rivers, rail yards or parks with no paths score badly on their own, and no special water handling is needed. The best placement from each size group (small, medium, large) moves on.
 
 ### 6. Routing along the drawing
-The outline is cut into waypoints about every 110 m (between 40 and 240 of them). Each waypoint snaps to its nearest intersection, and the app runs A* between consecutive waypoints. The cost of a street segment is its length × (1 + distance from the drawn line ÷ 40 m), so the router hugs the drawing instead of taking shortcuts. Short out-and-back spurs under 160 m that snapping creates are removed afterwards. With **Start and finish at my start point** on, the route runs from the start to the nearest point of the drawing, around it, and back home.
+The outline is cut into waypoints about every 70 m (between 50 and 320 of them). Each waypoint snaps to its nearest intersection, and the app runs A* between consecutive waypoints. The cost of a street segment is its length × (1 + distance from the drawn line ÷ 25 m), so the router hugs the drawing instead of taking shortcuts. Short out-and-back spurs under 120 m that snapping creates are removed afterwards. With **Start and finish at my start point** on, the route runs from the start to the nearest point of the drawing, around it, and back home. Those legs are drawn as a faint dotted line and left out of the match score, so they don't muddy the picture.
 
-### 7. If it doesn't fit nearby
-If the best neighbourhood route matches the picture less than 55%:
-1. Ask Nominatim which city the start is in, for example 서울특별시, and get its bounding box.
-2. Lay a 5 km grid of candidate areas over the city and try the 5 nearest to the start, loading a 7 × 7 km street square for each.
-3. Stop early when one matches 75% or better.
+### 7. Where should the drawing go?
+A detailed picture only looks right where the streets happen to run in its shape, so the runner can choose how widely to search:
 
-These routes begin on the drawing itself. The app says how far away it is, and that distance isn't counted.
+| Where | What gets tried |
+|---|---|
+| *Near my start* (default) | A 6 × 6 km square around the start, with the start-and-finish loop. If nothing matches 60%, the app searches the rest of the start's city. |
+| A city or district ("Seoul", "마포구") | Its neighbourhoods (`place=suburb/quarter/neighbourhood` in OpenStreetMap), nearest first, then always the one farthest from those already tried, so the whole city is covered quickly |
+| A country ("South Korea") | Its cities and towns, biggest population first, at least 20 km apart |
+| "The World" | 32 dense, walkable cities with very different street patterns: grids (Manhattan, Barcelona, Chicago), diagonals (Washington, Buenos Aires), organic old towns (Tokyo, London, Seoul, Rome) |
+
+Places are checked 8 at a time, two in parallel (the public map servers allow two requests at once), showing the best match so far. **Check more places** continues through the list. Each place loads a 6 × 6 km square of streets without sidewalks and service roads, which keeps the download small. Results show the top 3 places, each named, with how far it is from the start point if one was set. No start point is needed for a place search.
 
 ### 8. Scoring and estimates
-- **Shape match %** is the average gap between the route and the drawing, measured both ways, compared with the drawing's size. 100% means the route lies exactly on the outline. Options under 40% are hidden.
+- **Shape match %** is the average gap between the drawing part of the route and the picture, measured both ways, compared with the drawing's size (100% minus 4% for every 1% of the radius it's off on average). 100% means the route lies exactly on the outline. Options under 40% are hidden.
 - **Climb** comes from Open-Meteo's elevation API, sampled every 100 m along the route.
 - **Time** uses the trail-running "effort distance" idea: 100 m of climbing counts as 1 extra km, and trail kilometres count 1.25×. Effort distance × your easy pace = estimated time.
 - **Options:** up to three clearly different lengths (Compact, Medium, Large), with the best match shown first.
@@ -126,6 +130,8 @@ All are free and need no key. If the app ever gets lots of users, the public Ove
 - streets-only mode uses 0 km of trail
 - a lake around the start triggers the city-wide search, which still finds a ≥ 70% match
 - a 6 km limit is respected
+- "Seoul" with no start point checks named neighbourhoods and returns named options
+- "The World" checks cities around the world
 - the Draw button stays off until the start, the picture and the mountain answer are all given
 - no script errors
 
@@ -142,7 +148,7 @@ The GitHub Action `.github/workflows/route-art.yml` runs this on every push that
 | 1 | App logic: tracing, fitting, routing, city fallback, mountain filter, time estimate, GPX | Claude | Done |
 | 2 | Automated tests with a fake city | Claude | Done, 15/15 pass |
 | 3 | CI that tests every push and publishes to GitHub Pages | Claude | Done |
-| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 23/23 checks pass |
+| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 29/29 checks pass |
 | 4 | Merge the branch into the default branch | You (GitHub app or website, tablet is fine) | To do |
 | 5 | Turn on Pages once: Settings → Pages → Source → **GitHub Actions**, then re-run the "Route Art" workflow | You (website) | To do |
 | 6 | Open `https://junhakwon.github.io/junhakwon/RouteArt/` in Safari on your iPhone, then Share → Add to Home Screen | You | To do |

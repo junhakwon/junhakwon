@@ -61,6 +61,9 @@ button:focus-visible, input:focus-visible, label.choice:focus-within { outline: 
 label.choice { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
 label.choice:has(input:checked) { border-color: var(--route); background: color-mix(in srgb, var(--route) 8%, transparent); }
 label.choice small { display: block; color: var(--muted); }
+.where { display: grid; gap: 8px; }
+.where label { font-weight: 600; }
+.chip { padding: 8px 12px; border-radius: 99px; font-size: 13px; }
 .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .fields label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 .drop { border: 1.5px dashed var(--line); border-radius: 12px; padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: center; }
@@ -133,7 +136,7 @@ body.following { overflow: hidden; }
       <button id="findBtn" type="button">Find</button>
       <button id="gpsBtn" type="button">Use my location</button>
     </div>
-    <p class="hint">You can also tap the map to set or move the start point.</p>
+    <p class="hint">You can also tap the map to set or move the start point. Not needed if you pick a place under Where.</p>
     <p class="status" id="startStatus">No start point yet.</p>
   </section>
 
@@ -150,11 +153,22 @@ body.following { overflow: hidden; }
 
   <section class="step" aria-labelledby="h3s">
     <h2 id="h3s"><span class="num">3</span>Route settings</h2>
+    <div class="where">
+      <label for="where">Where should the drawing go?</label>
+      <input type="text" id="where" placeholder="Near my start" autocomplete="off">
+      <div class="row">
+        <button type="button" class="chip" data-where="">Near my start</button>
+        <button type="button" class="chip" data-where="Seoul">Seoul</button>
+        <button type="button" class="chip" data-where="South Korea">South Korea</button>
+        <button type="button" class="chip" data-where="The World">The World</button>
+      </div>
+      <p class="hint">Or type any city, district or country. Bigger areas give more chances to find streets shaped like your picture, but the route may be far from you.</p>
+    </div>
     <div class="fields">
       <label for="maxKm">Max distance (km)<input type="number" id="maxKm" value="20" min="2" max="60" step="1"></label>
       <label for="pace">Easy pace (min:sec per km)<input type="text" id="pace" value="6:00" inputmode="numeric"></label>
     </div>
-    <label class="choice"><input type="checkbox" id="loopHome" checked><span>Start and finish at my start point<small>Adds the run to and from the drawing.</small></span></label>
+    <label class="choice" id="loopRow"><input type="checkbox" id="loopHome" checked><span>Start and finish at my start point<small>Adds the run to and from the drawing.</small></span></label>
     <fieldset class="step" style="border-style:dashed;padding:12px;margin:0">
       <legend style="padding:0 6px;font-weight:600">Is it okay if the route goes over mountains?</legend>
       <p class="hint">Seoul's hills and mountains have great trails, but they are slower, steeper and darker at night.</p>
@@ -173,6 +187,7 @@ body.following { overflow: hidden; }
     <h2 id="h4s"><span class="num">4</span>Your route</h2>
     <p class="hint" id="areaNote"></p>
     <div class="cands" id="cands"></div>
+    <button type="button" id="moreBtn" hidden>Check more places</button>
     <dl class="stats">
       <div><dt>Distance</dt><dd id="sDist">–</dd></div>
       <div><dt>Est. time</dt><dd id="sTime">–</dd></div>
@@ -456,8 +471,7 @@ function place(unit, P, rot, cx, cy) {
 }
 
 // ---------- street graph ----------
-async function overpass(bb) { // bb = [s, w, n, e]
-  const q = `[out:json][timeout:120];way["highway"~"^(${HIGHWAYS})$"]["area"!="yes"](${bb.map(v => v.toFixed(5)).join(",")})->.w;.w out qt;node(w.w);out skel qt;`;
+async function overpassQL(q) {
   let lastErr;
   for (const url of OVERPASS) {
     try {
@@ -467,6 +481,9 @@ async function overpass(bb) { // bb = [s, w, n, e]
     } catch (e) { lastErr = e; }
   }
   throw new Error("Map data servers are busy (" + (lastErr && lastErr.message) + "). Try again in a minute.");
+}
+function overpass(bb, hw = HIGHWAYS) { // bb = [s, w, n, e]
+  return overpassQL(`[out:json][timeout:120];way["highway"~"^(${hw})$"]["area"!="yes"](${bb.map(v => v.toFixed(5)).join(",")})->.w;.w out qt;node(w.w);out skel qt;`);
 }
 function isTrail(t) {
   const hw = t.highway, sf = t.surface || "";
@@ -529,7 +546,7 @@ function searchPlacements(G, unit, opt) {
   const samples = resampleClosed(unit, 72);
   const out = [];
   for (const P of opt.sizes) {
-    const Rs = P / (2 * Math.PI), step = Math.max(120, P * 0.025), reach = opt.reach(P);
+    const Rs = P / (2 * Math.PI), step = opt.step ? opt.step(P) : Math.max(120, P * 0.025), reach = opt.reach(P);
     for (let deg = -30; deg <= 30; deg += 15) {
       const rot = deg * Math.PI / 180;
       for (let ox = -reach; ox <= reach + 1; ox += step) for (let oy = -reach; oy <= reach + 1; oy += step) {
@@ -573,7 +590,7 @@ function astar(G, s, t, ax, ay, bx, by, pull) {
     for (let j = 0; j < A.length; j += 4) {
       const v = A[j]; if (!G.keep[v]) continue;
       let c = A[j + 1] * A[j + 2];
-      if (pull) { const dev = segDist((G.X[u] + G.X[v]) / 2, (G.Y[u] + G.Y[v]) / 2, ax, ay, bx, by); c *= 1 + Math.min(dev, 250) / 40; }
+      if (pull) { const dev = segDist((G.X[u] + G.X[v]) / 2, (G.Y[u] + G.Y[v]) / 2, ax, ay, bx, by); c *= 1 + Math.min(dev, 250) / 25; }
       const nv = gu + c, ov = g.get(v);
       if (ov === undefined || nv < ov) { g.set(v, nv); prev.set(v, u); heapPush(h, [nv + H(v), v]); }
     }
@@ -582,27 +599,30 @@ function astar(G, s, t, ax, ay, bx, by, pull) {
   const path = [t]; let c = t; while (c !== s) { c = prev.get(c); path.push(c); } return path.reverse();
 }
 function routeShape(G, shape, startXY, loopHome) {
-  const P = perimeter(shape), N = Math.max(40, Math.min(240, Math.round(P / 110)));
+  // Returns the street path plus where the drawing itself begins (a) and ends (b),
+  // so the run to and from the start can be shown apart from the picture.
+  const P = perimeter(shape), N = Math.max(50, Math.min(320, Math.round(P / 70)));
   let wp = resampleClosed(shape, N);
-  // begin the drawing at the point nearest the runner's start
-  let k0 = 0, kd = Infinity; wp.forEach(([x, y], i) => { const d = (x - startXY[0]) ** 2 + (y - startXY[1]) ** 2; if (d < kd) { kd = d; k0 = i; } });
-  wp = wp.slice(k0).concat(wp.slice(0, k0)); wp.push(wp[0]);
+  if (startXY) { // begin the drawing at the point nearest the runner's start
+    let k0 = 0, kd = Infinity; wp.forEach(([x, y], i) => { const d = (x - startXY[0]) ** 2 + (y - startXY[1]) ** 2; if (d < kd) { kd = d; k0 = i; } });
+    wp = wp.slice(k0).concat(wp.slice(0, k0));
+  }
+  wp.push(wp[0]);
   const snaps = wp.map(([x, y]) => nearest(G, x, y, 400).i);
-  let nodes = [];
-  const add = seg => { if (!seg) return false; if (nodes.length && nodes[nodes.length - 1] === seg[0]) seg = seg.slice(1); nodes.push(...seg); return true; };
-  const home = nearest(G, startXY[0], startXY[1], 800).i;
-  if (loopHome && home >= 0) nodes.push(home);
-  let last = loopHome && home >= 0 ? home : -1, lastXY = startXY;
+  let draw = [], last = -1, lastXY = null;
   for (let i = 0; i < wp.length; i++) {
     const v = snaps[i]; if (v < 0 || v === last) continue;
-    if (last < 0) { nodes.push(v); last = v; lastXY = wp[i]; continue; }
-    const pull = !(loopHome && i === 0);
-    const seg = astar(G, last, v, lastXY[0], lastXY[1], wp[i][0], wp[i][1], pull) || astar(G, last, v, 0, 0, 0, 0, false);
-    if (add(seg)) { last = v; lastXY = wp[i]; }
+    if (last < 0) { draw.push(v); last = v; lastXY = wp[i]; continue; }
+    const seg = astar(G, last, v, lastXY[0], lastXY[1], wp[i][0], wp[i][1], true) || astar(G, last, v, 0, 0, 0, 0, false);
+    if (seg) { draw.push(...seg.slice(1)); last = v; lastXY = wp[i]; }
   }
-  if (loopHome && home >= 0 && last !== home) add(astar(G, last, home, 0, 0, 0, 0, false));
-  nodes = removeSpurs(G, nodes, 160);
-  return nodes;
+  draw = removeSpurs(G, draw, 120);
+  const home = loopHome && startXY && draw.length ? nearest(G, startXY[0], startXY[1], 800).i : -1;
+  const lead = home >= 0 ? astar(G, home, draw[0], 0, 0, 0, 0, false) || [draw[0]] : [draw[0]];
+  const tail = home >= 0 ? astar(G, draw[draw.length - 1], home, 0, 0, 0, 0, false) || [] : [];
+  const nodes = lead.slice(0, -1), a = nodes.length;
+  nodes.push(...draw); const b = nodes.length - 1; nodes.push(...tail.slice(1));
+  return { nodes, a, b };
 }
 function removeSpurs(G, nodes, maxLen) {
   // drop short out-and-back detours (A … B … A) that snapping creates
@@ -618,104 +638,204 @@ function removeSpurs(G, nodes, maxLen) {
   return nodes;
 }
 function perimeter(p) { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += Math.hypot(b[0] - a[0], b[1] - a[1]); } return s; }
-function routeStats(G, nodes, shape) {
+function routeStats(G, nodes, shape, a = 0, b = nodes.length - 1) {
   let dist = 0, trail = 0;
   for (let i = 1; i < nodes.length; i++) {
-    const a = nodes[i - 1], b = nodes[i], A = G.adj[a]; let len = Math.hypot(G.X[a] - G.X[b], G.Y[a] - G.Y[b]), tr = 0;
-    for (let j = 0; j < A.length; j += 4) if (A[j] === b) { tr = A[j + 3]; break; }
+    const u = nodes[i - 1], v = nodes[i], A = G.adj[u]; let len = Math.hypot(G.X[u] - G.X[v], G.Y[u] - G.Y[v]), tr = 0;
+    for (let j = 0; j < A.length; j += 4) if (A[j] === v) { tr = A[j + 3]; break; }
     dist += len; if (tr) trail += len;
   }
-  // how closely the route follows the drawing (both directions)
-  const rpts = nodes.map(v => [G.X[v], G.Y[v]]);
+  // how closely the drawing part follows the picture, measured both ways
+  const rpts = nodes.slice(a, b + 1).map(v => [G.X[v], G.Y[v]]);
   const sh = resampleClosed(shape, 150);
   const d1 = sh.map(([x, y]) => minDistToPolyline(x, y, rpts));
   const d2 = rpts.filter((_, i) => i % 2 === 0).map(([x, y]) => minDistToPolyline(x, y, sh.concat([sh[0]])));
-  const mean = (d1.reduce((a, b) => a + b, 0) / d1.length + d2.reduce((a, b) => a + b, 0) / d2.length) / 2;
+  const mean = (d1.reduce((p, q) => p + q, 0) / d1.length + d2.reduce((p, q) => p + q, 0) / d2.length) / 2;
   const Rs = perimeter(shape) / (2 * Math.PI);
-  const match = Math.round(100 * Math.max(0, Math.min(1, 1 - mean / (0.35 * Rs))));
+  const match = Math.round(100 * Math.max(0, Math.min(1, 1 - mean / (0.25 * Rs))));
   return { dist, trail, match };
 }
 function minDistToPolyline(x, y, p) { let m = Infinity; for (let i = 1; i < p.length; i++) m = Math.min(m, segDist(x, y, p[i - 1][0], p[i - 1][1], p[i][0], p[i][1])); return m; }
 
 // ---------- main flow ----------
+// Lighter street set for searching many places: skips sidewalks and service roads,
+// which are most of the data in Korean cities but rarely change the shape of a fit.
+const HW_LIGHT = "residential|living_street|unclassified|tertiary|tertiary_link|secondary|secondary_link|primary|primary_link|pedestrian|cycleway|track|path|bridleway|steps";
+// "The World": dense, walkable cities with very different street patterns
+// (grids, diagonals, organic old towns), so most pictures find a good match somewhere.
+const WORLD = [
+  ["Manhattan, New York", 40.758, -73.985], ["Tokyo (Shinjuku)", 35.690, 139.700], ["Barcelona (Eixample)", 41.392, 2.163],
+  ["London", 51.515, -0.130], ["Seoul (Mapo)", 37.556, 126.920], ["Paris", 48.857, 2.352], ["Chicago", 41.880, -87.650],
+  ["Buenos Aires", -34.600, -58.400], ["Kyoto", 35.010, 135.760], ["Washington, DC", 38.900, -77.030], ["Istanbul", 41.010, 28.970],
+  ["Osaka", 34.690, 135.500], ["Berlin", 52.520, 13.400], ["Mexico City", 19.420, -99.160], ["Melbourne", -37.810, 144.960],
+  ["Madrid", 40.420, -3.700], ["San Francisco", 37.770, -122.430], ["Taipei", 25.040, 121.530], ["Rome", 41.900, 12.490],
+  ["São Paulo", -23.560, -46.650], ["Amsterdam", 52.370, 4.890], ["Busan", 35.160, 129.060], ["Philadelphia", 39.950, -75.160],
+  ["Vienna", 48.210, 16.370], ["Toronto", 43.660, -79.400], ["Bangkok", 13.740, 100.530], ["Sydney", -33.880, 151.200],
+  ["Milan", 45.460, 9.190], ["Los Angeles", 34.050, -118.300], ["Cairo", 30.050, 31.240], ["Moscow", 55.750, 37.620], ["Salt Lake City", 40.760, -111.890],
+].map(([name, lat, lon]) => ({ name, lat, lon }));
+
+function whereValue() { const v = $("where").value.trim(); return !v || /^(near|near my start|nearby|내 주변|주변)$/i.test(v) ? null : v; }
 function updateGo() {
-  const mtn = document.querySelector('input[name="mtn"]:checked');
-  const ready = S.start && S.contour && mtn;
-  $("goBtn").disabled = !ready;
+  const mtn = document.querySelector('input[name="mtn"]:checked'), where = whereValue();
+  const ready = (S.start || where) && S.contour && mtn;
+  $("loopRow").hidden = !!where;
+  $("goBtn").disabled = !ready || !!$("goStatus").dataset.busy;
   if (!ready) {
-    const miss = [!S.start && "a start point", !S.contour && "a picture", !mtn && "an answer to the mountain question"].filter(Boolean);
+    const miss = [!S.start && !where && "a start point (or a place under Where)", !S.contour && "a picture", !mtn && "an answer to the mountain question"].filter(Boolean);
     $("goStatus").className = "status"; $("goStatus").textContent = "Still needed: " + miss.join(", ") + ".";
-  } else if (!$("goStatus").dataset.busy) { $("goStatus").className = "status"; $("goStatus").textContent = "Ready."; }
+  } else if (!$("goStatus").dataset.busy && /^Still needed/.test($("goStatus").textContent)) { $("goStatus").className = "status"; $("goStatus").textContent = "Ready."; }
 }
 document.querySelectorAll('input[name="mtn"]').forEach(r => r.addEventListener("change", updateGo));
-$("goBtn").onclick = () => run().catch(e => { status(e.message || String(e), true); console.error(e); }).finally(() => { delete $("goStatus").dataset.busy; $("goBtn").disabled = false; });
+$("where").addEventListener("input", updateGo);
+document.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => { $("where").value = b.dataset.where; updateGo(); }));
+$("goBtn").onclick = () => run().catch(e => { status(e.message || String(e), true); console.error(e); }).finally(() => { delete $("goStatus").dataset.busy; updateGo(); });
+$("moreBtn").onclick = () => searchMore().catch(e => { status(e.message || String(e), true); console.error(e); });
 function status(t, err) { $("goStatus").className = "status" + (err ? " err" : ""); $("goStatus").textContent = t; }
 const tick = () => new Promise(r => setTimeout(r, 0));
 function parsePace() { const m = $("pace").value.trim().match(/^(\d+)(?::(\d{1,2}))?$/); return m ? (+m[1]) + (+(m[2] || 0)) / 60 : 6; }
 
+function settings() {
+  const maxM = Math.max(2, +$("maxKm").value || 20) * 1000;
+  let sizes = [2500, 4000, 6000, 8500, 11500, 15000, 19000].filter(P => P * 1.3 <= maxM); // street routes run ~30% longer than the outline
+  if (!sizes.length) sizes = [Math.max(1500, maxM / 1.3 * 0.9)];
+  return { allowTrails: document.querySelector('input[name="mtn"]:checked').value === "yes", maxM, sizes, unit: normShape(S.contour) };
+}
+
 async function run() {
-  $("goStatus").dataset.busy = "1"; $("goBtn").disabled = true;
-  const allowTrails = document.querySelector('input[name="mtn"]:checked').value === "yes";
-  const maxM = Math.max(2, +$("maxKm").value || 20) * 1000, loopHome = $("loopHome").checked;
-  const { lat, lon } = S.start, proj = projector(lat, lon), unit = normShape(S.contour);
-  const detour = 1.3; // street routes run ~30% longer than the ideal outline
+  $("goStatus").dataset.busy = "1"; $("goBtn").disabled = true; $("moreBtn").hidden = true;
+  const opts = settings(), where = whereValue();
+  S.region = null;
+  if (where) return startRegion(where, opts, []);
+  const near = await runNear(opts);
+  if (near.length && near[0].match >= 60)
+    return showResults(near.sort((a, b) => a.dist - b.dist), "These routes fit around your start point. Grey dotted lines are the run to and from the drawing.");
+  status("It doesn't fit well near your start. Searching the rest of your city…"); await tick();
+  const city = await cityOf(S.start.lat, S.start.lon);
+  if (!city) { if (near.length) return showResults(near, "The best fits near your start point."); throw new Error("Couldn't fit this picture nearby. Try a place under Where, like Seoul or The World."); }
+  return startRegion(city, opts, near);
+}
 
-  // Stage 1: the neighborhood around the start
-  const half = 3000;
+async function runNear(opts) {
+  const { lat, lon } = S.start, proj = projector(lat, lon), half = 3000;
   status("Loading streets around your start point…"); await tick();
-  const bbLL = (cx, cy, hf) => { const sw = proj.ll(cx - hf, cy - hf), ne = proj.ll(cx + hf, cy + hf); return [sw[0], sw[1], ne[0], ne[1]]; };
-  let data = await overpass(bbLL(0, 0, half));
+  const sw = proj.ll(-half, -half), ne = proj.ll(half, half);
+  const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]]), proj, opts.allowTrails);
   status("Fitting your picture onto the streets…"); await tick();
-  let G = buildGraph(data, proj, allowTrails); data = null;
-  const sizesFor = budget => [2500, 4000, 6000, 8500, 11500, 15000, 19000].filter(P => P * detour <= budget);
-  const nbBudget = maxM; // approach legs are counted after routing
-  let sizes = sizesFor(nbBudget); if (!sizes.length) sizes = [Math.max(1500, maxM / detour * 0.9)];
-  let cands = searchPlacements(G, unit, { sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
+  const cands = searchPlacements(G, opts.unit, { sizes: opts.sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
     reach: P => P / (2 * Math.PI) * 0.8 + 250 });
-  let picked = onePerSize(await routeCandidates(G, pickDiverse(cands, 3), unit, [0, 0], loopHome, maxM, proj, allowTrails));
-  let area = "neighborhood";
+  return onePerSize(await routeCandidates(G, pickDiverse(cands, 3), opts.unit, [0, 0], $("loopHome").checked, opts.maxM, proj));
+}
 
-  // Stage 2: if nothing fits nearby, look around the city
-  if (!picked.length || picked[0].match < 55) {
-    status("It doesn't fit well nearby. Looking around the city…"); await tick();
-    let city = null;
-    try {
-      const r = await fetch(`${NOMINATIM}/reverse?format=jsonv2&zoom=10&accept-language=ko,en&lat=${lat}&lon=${lon}`);
-      const j = await r.json(); const a = j.address || {};
-      city = { name: a.city || a.province || a.state || a.county || j.name, bb: j.boundingbox ? j.boundingbox.map(Number) : null };
-    } catch (e) { /* fall back to a ring around the start */ }
-    const bbox = city && city.bb ? [proj.xy(city.bb[0], city.bb[2]), proj.xy(city.bb[1], city.bb[3])] : [[-12000, -12000], [12000, 12000]];
-    const centers = [];
-    for (let x = bbox[0][0] + 3000; x <= bbox[1][0] - 3000; x += 5000) for (let y = bbox[0][1] + 3000; y <= bbox[1][1] - 3000; y += 5000)
-      if (Math.hypot(x, y) > 3500) centers.push([x, y]);
-    centers.sort((a, b) => Math.hypot(...a) - Math.hypot(...b));
-    let pool = picked.slice();
-    const cityHalf = 3500;
-    for (const [i, [cx, cy]] of centers.slice(0, 5).entries()) {
-      status(`Trying area ${i + 1} of ${Math.min(5, centers.length)} in ${city && city.name ? city.name : "the city"}…`); await tick();
-      let d2; try { d2 = await overpass(bbLL(cx, cy, cityHalf)); } catch (e) { continue; }
-      const G2 = buildGraph(d2, proj, allowTrails); d2 = null;
-      const c2 = searchPlacements(G2, unit, { sizes: sizesFor(maxM), cx, cy, bx: [cx - cityHalf + 150, cy - cityHalf + 150, cx + cityHalf - 150, cy + cityHalf - 150],
-        reach: () => 1500 });
-      const r2 = await routeCandidates(G2, pickDiverse(c2, 2), unit, [cx, cy], false, maxM, proj, allowTrails);
-      r2.forEach(c => c.far = Math.hypot(c.cx, c.cy));
-      pool = pool.concat(r2);
-      if (r2.some(c => c.match >= 75)) break;
-    }
-    pool.sort((a, b) => b.match - a.match);
-    if (pool.length && (!picked.length || pool[0].match > picked[0].match + 5)) { picked = onePerSize(pool); area = city && city.name ? city.name : "the city"; }
+async function cityOf(lat, lon) {
+  try {
+    const j = await (await fetch(`${NOMINATIM}/reverse?format=jsonv2&zoom=10&accept-language=ko,en&lat=${lat}&lon=${lon}`)).json();
+    const a = j.address || {}; return a.city || a.province || a.state || a.county || j.name || null;
+  } catch (e) { return null; }
+}
+
+async function resolveRegion(q) {
+  if (/^(the\s+)?(whole\s+)?(world|earth|globe)$|^(전\s*)?세계$/i.test(q)) return { world: true, name: "the world" };
+  let j;
+  try { j = await (await fetch(`${NOMINATIM}/search?format=jsonv2&limit=5&accept-language=ko,en&q=${encodeURIComponent(q)}`)).json(); }
+  catch (e) { throw new Error("Couldn't reach the place search. Check your connection."); }
+  if (!j.length) throw new Error(`Couldn't find "${q}". Try a city or country name, or The World.`);
+  const hit = j.find(x => x.osm_type === "relation") || j[0];
+  const bb = hit.boundingbox ? hit.boundingbox.map(Number) : [+hit.lat - 0.15, +hit.lat + 0.15, +hit.lon - 0.2, +hit.lon + 0.2]; // s, n, w, e
+  return { name: hit.name || q, lat: +hit.lat, lon: +hit.lon, bb, sizeKm: haversine([bb[0], bb[2]], [bb[1], bb[3]]) / 1000,
+    areaId: hit.osm_type === "relation" ? 3600000000 + Number(hit.osm_id) : null };
+}
+
+// Places to try inside a region: towns and cities for a country, neighborhoods for a city.
+async function regionPlaces(reg) {
+  if (reg.world) return WORLD.map(p => ({ ...p }));
+  const big = reg.sizeKm > 150, types = big ? "city|town" : "suburb|quarter|neighbourhood";
+  const scope = reg.areaId ? `area(${reg.areaId})->.a;node[place~"^(${types})$"](area.a);`
+    : `node[place~"^(${types})$"](${reg.bb[0]},${reg.bb[2]},${reg.bb[1]},${reg.bb[3]});`;
+  let list = [];
+  try {
+    const j = await overpassQL(`[out:json][timeout:90];${scope}out qt;`);
+    list = (j.elements || []).filter(e => e.type === "node" && e.tags && e.tags.name).map(e => ({
+      name: e.tags["name:ko"] || e.tags.name, lat: e.lat, lon: e.lon, pop: parseInt(String(e.tags.population || "0").replace(/\D/g, ""), 10) || 0 }));
+  } catch (e) { /* fall back to a grid */ }
+  if (list.length < 3) { // no named places: lay a grid over the region
+    const step = big ? 0.25 : 0.04; let n = 0;
+    for (let la = reg.bb[0] + step / 2; la < reg.bb[1]; la += step) for (let lo = reg.bb[2] + step / 2; lo < reg.bb[3]; lo += step)
+      list.push({ name: `${reg.name} area ${++n}`, lat: la, lon: lo, pop: 0 });
   }
-  // drop options that don't really look like the picture, unless nothing better exists
-  const good = picked.filter(c => c.match >= 40);
-  if (good.length) picked = good;
-  if (!picked.length) throw new Error("Couldn't fit this picture within the distance limit. Try a larger max distance or a simpler picture.");
-  picked.sort((a, b) => a.dist - b.dist);
-  S.cands = picked;
-  $("areaNote").textContent = area === "neighborhood"
-    ? "These routes fit in your neighborhood. Pick one to compare."
-    : `Your picture didn't fit well close by, so these routes are elsewhere in ${area}. The distance to get there isn't included.`;
-  renderCands(); select(picked.reduce((bi, c, i, a) => c.match > a[bi].match ? i : bi, 0));
-  status(`Done. ${picked.length} route option${picked.length > 1 ? "s" : ""} found.`);
+  if (big) return spread(list.sort((a, b) => b.pop - a.pop), 20000);
+  return farthestFirst(spread(list, 2500), S.start || { lat: reg.lat, lon: reg.lon });
+}
+function spread(list, minD) { const out = []; for (const p of list) if (out.every(o => haversine([o.lat, o.lon], [p.lat, p.lon]) >= minD)) out.push(p); return out; }
+function farthestFirst(pts, from) { // nearest place first, then always the place farthest from those already chosen
+  pts = pts.slice(); if (!pts.length) return pts;
+  const d0 = pts.map(p => haversine([from.lat, from.lon], [p.lat, p.lon]));
+  const out = [pts.splice(d0.indexOf(Math.min(...d0)), 1)[0]];
+  const md = pts.map(p => haversine([out[0].lat, out[0].lon], [p.lat, p.lon]));
+  while (pts.length) {
+    const i = md.indexOf(Math.max(...md)), p = pts.splice(i, 1)[0]; md.splice(i, 1); out.push(p);
+    pts.forEach((q, k) => { md[k] = Math.min(md[k], haversine([p.lat, p.lon], [q.lat, q.lon])); });
+  }
+  return out;
+}
+
+async function startRegion(q, opts, seed) {
+  status(`Looking up ${q}…`); await tick();
+  const reg = await resolveRegion(q);
+  status(`Finding places to try in ${reg.name}…`); await tick();
+  const places = await regionPlaces(reg);
+  if (!places.length) throw new Error(`Couldn't find places to try in ${reg.name}. Try a bigger area, or The World.`);
+  S.region = { name: reg.name, queue: places, total: places.length, checked: 0, opts, pool: seed.map(c => ({ ...c, place: "Near your start" })) };
+  return searchMore();
+}
+
+async function searchMore() {
+  const R = S.region; if (!R) return;
+  $("goStatus").dataset.busy = "1"; $("goBtn").disabled = true; $("moreBtn").disabled = true;
+  try {
+    const batch = R.queue.splice(0, 8);
+    const best = () => R.pool.reduce((b, c) => (!b || c.match > b.match ? c : b), null);
+    status(`Checking places in ${R.name}…`);
+    const worker = async () => {
+      while (batch.length) {
+        const pl = batch.shift();
+        try { R.pool.push(...await evalPlace(pl, R.opts)); } catch (e) { console.warn(pl.name, e); }
+        R.checked++; const b = best();
+        status(`Checked ${R.checked} of ${R.total} places in ${R.name}${b ? ` · best so far ${b.match}% in ${b.place}` : ""}…`);
+      }
+    };
+    await Promise.all([worker(), worker()]); // public map servers allow two requests at a time
+    const top = [];
+    for (const c of R.pool.slice().sort((a, b) => b.match - a.match)) if (top.length < 3 && !top.some(t => t.place === c.place)) top.push(c);
+    if (!top.length) throw new Error(`Nothing fit within ${R.opts.maxM / 1000} km in the places checked so far.${R.queue.length ? " Tap Check more places." : ""}`);
+    showResults(top, `Best fits after checking ${R.checked} of ${R.total} places in ${R.name}.${R.queue.length ? " Check more places to keep looking." : ""}`);
+  } finally {
+    delete $("goStatus").dataset.busy; updateGo(); $("moreBtn").disabled = false;
+    $("moreBtn").hidden = !R.queue.length;
+    $("moreBtn").textContent = `Check ${Math.min(8, R.queue.length)} more places (${R.queue.length} left)`;
+  }
+}
+
+async function evalPlace(pl, opts) {
+  const proj = projector(pl.lat, pl.lon), half = 3000;
+  const sw = proj.ll(-half, -half), ne = proj.ll(half, half);
+  const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]], HW_LIGHT), proj, opts.allowTrails);
+  if (G.grid.size < 40) return []; // water, fields or mountains with no paths
+  await tick();
+  const c = searchPlacements(G, opts.unit, { sizes: opts.sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
+    reach: P => Math.max(200, half - 150 - P / (2 * Math.PI) * 0.9), step: P => Math.max(160, P * 0.04) });
+  const r = await routeCandidates(G, pickDiverse(c, 2), opts.unit, [0, 0], false, opts.maxM, proj);
+  r.forEach(x => { x.place = pl.name; });
+  return r;
+}
+
+function showResults(list, note) {
+  const good = list.filter(c => c.match >= 35); if (good.length) list = good; // hide options that don't look like the picture
+  if (!list.length) throw new Error("Couldn't fit this picture within the distance limit. Try a larger max distance or a simpler picture.");
+  list.forEach(c => { c.fromStart = S.start && c.place && c.place !== "Near your start" ? haversine([S.start.lat, S.start.lon], c.ll[0]) : null; });
+  S.cands = list;
+  $("areaNote").textContent = note;
+  renderCands(); select(list.reduce((bi, c, i, a) => (c.match > a[bi].match ? i : bi), 0));
+  status(`Done. ${list.length} route option${list.length > 1 ? "s" : ""} found.`);
   $("results").hidden = false;
   if (window.innerWidth < 800) $("map").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -726,16 +846,16 @@ function onePerSize(list) { // up to 3 routes that differ clearly in length, bes
     if (out.length < 3 && out.every(o => Math.abs(o.dist - c.dist) > 0.15 * Math.min(o.dist, c.dist))) out.push(c);
   return out;
 }
-async function routeCandidates(G, list, unit, startXY, loopHome, maxM, proj, allowTrails) {
+async function routeCandidates(G, list, unit, startXY, loopHome, maxM, proj) {
   const out = [];
   for (const c of list) {
     await tick();
     const shape = place(unit, c.P, c.rot, c.cx, c.cy);
-    const nodes = routeShape(G, shape, loopHome ? startXY : shape[0], loopHome);
-    if (nodes.length < 4) continue;
-    const st = routeStats(G, nodes, shape);
+    const r = routeShape(G, shape, loopHome ? startXY : null, loopHome);
+    if (r.b - r.a < 3) continue;
+    const st = routeStats(G, r.nodes, shape, r.a, r.b);
     if (st.dist > maxM) continue;
-    out.push({ ...c, shape, ll: nodes.map(v => proj.ll(G.X[v], G.Y[v])), shapeLL: shape.map(([x, y]) => proj.ll(x, y)), ...st, gain: null });
+    out.push({ ...c, shape, ll: r.nodes.map(v => proj.ll(G.X[v], G.Y[v])), shapeLL: shape.map(([x, y]) => proj.ll(x, y)), drawA: r.a, drawB: r.b, ...st, gain: null });
   }
   return out.sort((a, b) => b.match - a.match);
 }
@@ -744,27 +864,30 @@ function renderCands() {
   const box = $("cands"); box.innerHTML = "";
   S.cands.forEach((c, i) => {
     const b = document.createElement("button"); b.type = "button"; b.className = "cand"; b.id = "cand" + i;
-    const label = S.cands.length === 1 ? "Route" : ["Compact", "Medium", "Large"][Math.round(i * 2 / Math.max(1, S.cands.length - 1))];
-    b.innerHTML = `<b>${label}</b><span>${(c.dist / 1000).toFixed(1)} km · ${c.match}% match</span>`;
-    b.onclick = () => select(i); box.appendChild(b);
+    const label = c.place || (S.cands.length === 1 ? "Route" : ["Compact", "Medium", "Large"][Math.round(i * 2 / Math.max(1, S.cands.length - 1))]);
+    const t = document.createElement("b"); t.textContent = label;
+    const s = document.createElement("span"); s.textContent = `${(c.dist / 1000).toFixed(1)} km · ${c.match}% match`;
+    b.append(t, s); b.onclick = () => select(i); box.appendChild(b);
   });
 }
 async function select(i) {
   S.sel = i; const c = S.cands[i];
   document.querySelectorAll(".cand").forEach((b, j) => b.classList.toggle("on", j === i));
   S.layers.forEach(l => map.removeLayer(l)); S.layers = [];
-  const css = getComputedStyle(document.documentElement);
-  S.layers.push(L.polygon(c.shapeLL, { color: css.getPropertyValue("--ghost").trim(), weight: 2, dashArray: "6 6", fill: false }).addTo(map));
-  const line = L.polyline(c.ll, { color: css.getPropertyValue("--route").trim(), weight: 5, opacity: .9, lineJoin: "round" }).addTo(map);
-  S.layers.push(line);
-  // kilometer markers
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  S.layers.push(L.polygon(c.shapeLL, { color: col("--ghost"), weight: 2, dashArray: "6 6", fill: false }).addTo(map));
+  // the run to and from the drawing is shown faintly so it doesn't muddy the picture
+  const leg = { color: col("--muted"), weight: 3, dashArray: "2 7", opacity: .9 };
+  if (c.drawA > 0) S.layers.push(L.polyline(c.ll.slice(0, c.drawA + 1), leg).addTo(map));
+  if (c.drawB < c.ll.length - 1) S.layers.push(L.polyline(c.ll.slice(c.drawB), leg).addTo(map));
+  S.layers.push(L.polyline(c.ll.slice(c.drawA, c.drawB + 1), { color: col("--route"), weight: 5, opacity: .9, lineJoin: "round" }).addTo(map));
   let acc = 0, nextKm = 1000;
   for (let k = 1; k < c.ll.length; k++) {
     acc += haversine(c.ll[k - 1], c.ll[k]);
     if (acc >= nextKm) { S.layers.push(L.marker(c.ll[k], { icon: L.divIcon({ className: "km", html: String(nextKm / 1000), iconSize: [18, 16] }), keyboard: false }).addTo(map)); nextKm += 1000; }
   }
-  if (c.far) S.layers.push(L.circleMarker(c.ll[0], { radius: 7, color: "#fff", weight: 3, fillColor: css.getPropertyValue("--route").trim(), fillOpacity: 1 }).bindTooltip("Route start").addTo(map));
-  map.fitBounds(line.getBounds(), { padding: [24, 24] });
+  S.layers.push(L.circleMarker(c.ll[0], { radius: 7, color: "#fff", weight: 3, fillColor: col("--fg"), fillOpacity: 1 }).bindTooltip("Route start").addTo(map));
+  map.fitBounds(L.latLngBounds(c.ll), { padding: [24, 24] });
   showStats(c);
   if (c.gain === null) { c.gain = await elevationGain(c.ll).catch(() => undefined); if (S.sel === i) showStats(c); }
   makeGpx(c);
@@ -773,13 +896,13 @@ function showStats(c) {
   const pace = parsePace(), km = c.dist / 1000, trailKm = c.trail / 1000;
   // ITRA-style effort: 100 m of climbing counts like 1 km; trail kilometres run ~25% slower
   const effort = (km - trailKm) + trailKm * 1.25 + (c.gain || 0) / 100;
-  const mins = effort * pace;
   $("sDist").textContent = km.toFixed(1) + " km";
-  $("sTime").textContent = fmtTime(mins);
+  $("sTime").textContent = fmtTime(effort * pace);
   $("sGain").textContent = c.gain === null ? "…" : c.gain === undefined ? "n/a" : Math.round(c.gain) + " m";
   $("sTrail").textContent = trailKm.toFixed(1) + " km";
   const m = $("sMatch"); m.textContent = c.match + "% shape match"; m.className = "pill " + (c.match >= 65 ? "ok" : "warn");
-  $("sTimeNote").textContent = `At ${$("pace").value}/km${c.gain ? ", counting the climb" : ""}${c.far ? `. Route start is ${(c.far / 1000).toFixed(1)} km from you` : ""}.`;
+  const where = c.place && c.place !== "Near your start" ? ` In ${c.place}` + (c.fromStart != null ? `, ${(c.fromStart / 1000).toFixed(c.fromStart > 100000 ? 0 : 1)} km from your start point.` : ".") : "";
+  $("sTimeNote").textContent = `At ${$("pace").value}/km${c.gain ? ", counting the climb" : ""}.${where}`;
 }
 $("pace").addEventListener("change", () => { if (S.cands[S.sel]) showStats(S.cands[S.sel]); });
 function fmtTime(m) { const h = Math.floor(m / 60), mm = Math.round(m % 60); return h ? `${h} h ${String(mm).padStart(2, "0")} min` : `${mm} min`; }
@@ -803,7 +926,7 @@ function asRoute(c) { // the parts of a result worth keeping
   if (!c.id) {
     const d = new Date(), km = (c.dist / 1000).toFixed(1);
     c.id = "r" + d.getTime().toString(36) + Math.random().toString(36).slice(2, 6);
-    c.name = `${S.imgName || "Route Art"} · ${km} km`;
+    c.name = `${S.imgName || "Route Art"}${c.place && c.place !== "Near your start" ? " · " + c.place : ""} · ${km} km`;
     c.date = d.toISOString();
   }
   return { id: c.id, name: c.name, date: c.date, dist: c.dist, trail: c.trail, gain: c.gain ?? null, match: c.match, pace: $("pace").value,
