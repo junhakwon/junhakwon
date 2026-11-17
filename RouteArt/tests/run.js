@@ -114,6 +114,35 @@ async function followAndSave(page, context) {
   return res;
 }
 
+// A phone screenshot of a line-art character: white background, a thin black outline,
+// status-bar text at the top and a solid black bar along the bottom edge.
+const SCREENSHOT = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="650"><rect width="300" height="650" fill="white"/>
+<rect x="20" y="12" width="40" height="8" fill="black"/><rect x="230" y="12" width="50" height="8" fill="black"/>
+<g stroke="black" stroke-width="5" fill="white" stroke-linejoin="round">
+<path d="M70 230 L80 150 L130 195 Z"/><path d="M230 230 L220 150 L170 195 Z"/>
+<rect x="95" y="300" width="110" height="170" rx="20"/><ellipse cx="150" cy="260" rx="100" ry="80"/></g>
+<circle cx="115" cy="255" r="8" fill="black"/><circle cx="185" cy="255" r="8" fill="black"/>
+<rect x="0" y="590" width="300" height="60" fill="black"/></svg>`;
+
+async function traceCheck(browser) {
+  const page = await browser.newPage();
+  await page.route("**/*", r => {
+    const u = r.request().url();
+    if (u.includes("leaflet.min.js")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.js")), contentType: "text/javascript" });
+    return u.startsWith(PAGE) ? r.continue() : r.fulfill({ status: 404, body: "" });
+  });
+  await page.goto(PAGE);
+  await page.setInputFiles("#file", { name: "screenshot.svg", mimeType: "image/svg+xml", buffer: Buffer.from(SCREENSHOT) });
+  await page.waitForTimeout(400);
+  const box = await page.evaluate(() => {
+    let a = [1e9, 1e9, -1e9, -1e9];
+    for (const [x, y] of S.contour) { a = [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)]; }
+    return { aspect: (a[2] - a[0]) / (a[3] - a[1]) };
+  });
+  await page.close();
+  return box;
+}
+
 async function installCheck(browser) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 },
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
@@ -166,6 +195,8 @@ async function installCheck(browser) {
   ok(/<trkpt lat=/.test(f.gpx) && f.gpx.includes("<gpx"), `share: GPX file produced (${f.gpxName})`);
   ok(f.savedBefore === 1 && f.savedAfterReload === 1, "my routes: route saved and still there after reopening");
   ok(f.armed.includes("again") && f.savedAfterDelete === 0, "my routes: delete asks for a second tap, then removes it");
+  const tr = await traceCheck(browser);
+  ok(tr.aspect > 0.45 && tr.aspect < 1.2, `trace: screenshot picks the character, not the bottom bar (aspect ${tr.aspect.toFixed(2)})`);
   const i = await installCheck(browser);
   ok(i.sw, "install: offline service worker active");
   ok(i.display === "standalone" && i.icons && i.touchIcon, "install: manifest and home-screen icons in place");

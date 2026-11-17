@@ -1,7 +1,7 @@
 // Route Art service worker: makes the app open without a connection and keeps
-// map tiles along saved routes so Follow mode still has a map on weak signal.
+// the map tiles you've already viewed so Follow mode still has a map on weak signal.
 // Map data, address search and elevation always go to the network.
-const VERSION = "route-art-v1";
+const VERSION = "route-art-v2";
 const SHELL = VERSION + "-shell";
 const TILES = "route-art-tiles";
 const MAX_TILES = 4000;
@@ -36,8 +36,8 @@ self.addEventListener("fetch", e => {
   }
 
   // Map tiles: cache first, keep them for offline use.
-  if (url.hostname.endsWith("basemaps.cartocdn.com")) {
-    const key = url.origin.replace(/\/\/[a-d]\./, "//a.") + url.pathname; // one copy per tile, whichever subdomain served it
+  if (url.hostname === "tile.openstreetmap.org") {
+    const key = url.origin + url.pathname;
     e.respondWith(caches.open(TILES).then(async c => {
       const hit = await c.match(key);
       if (hit) return hit;

@@ -185,7 +185,7 @@ body.following { overflow: hidden; }
       <button type="button" id="shareBtn">Share GPX</button>
       <a class="btn" id="dlBtn" href="#" download="route-art.gpx">Download GPX</a>
     </div>
-    <p class="hint">Following or sharing a route also saves it to My routes, with its map area stored for weak signal.</p>
+    <p class="hint">Following or sharing a route also saves it to My routes.</p>
     <div>
       <p style="margin:0 0 4px;font-weight:600">Put it on your Forerunner 265</p>
       <ol class="how">
@@ -253,9 +253,9 @@ const S = { start: null, contour: null, invert: false, img: null, cands: [], sel
 
 // ---------- map ----------
 const map = L.map("map", { zoomControl: true }).setView([37.5665, 126.978], 12);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-  maxZoom: 19, subdomains: "abcd",
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 }).addTo(map);
 map.on("click", e => setStart(e.latlng.lat, e.latlng.lng, "Map point"));
 
@@ -355,18 +355,43 @@ function traceImage(img, invert) {
     if (b / bt > 0.5) for (let i = 0; i < n; i++) ink[i] ^= 1;
   }
   if (invert) for (let i = 0; i < n; i++) ink[i] ^= 1;
-  // largest 8-connected component, on a grid padded by one pixel
+  // Pick the main subject. Screenshots and photos have bars, frames and text along
+  // the edges, and line-art characters are mostly "background" inside a thin outline,
+  // so rank each blob by the area its outline encloses, and set aside blobs that
+  // touch the image edge.
   const W = w + 2, H = h + 2, m = new Uint8Array(W * H);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[(y + 1) * W + x + 1] = ink[y * w + x];
-  const lab = new Int32Array(W * H); let bestL = 0, bestN = 0, L = 0; const stack = [];
+  // close 1-px gaps so a hand-drawn or anti-aliased outline stays one piece
+  const g2 = m.slice();
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (!m[y * W + x]) {
+    let n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) n += m[(y + dy) * W + x + dx];
+    if (n >= 2) g2[y * W + x] = 1;
+  }
+  m.set(g2);
+  const lab = new Int32Array(W * H); let L = 0; const stack = [], comps = [];
   for (let i = 0; i < W * H; i++) if (m[i] && !lab[i]) {
-    L++; let cnt = 0; stack.push(i); lab[i] = L;
+    L++; let cnt = 0, x0 = W, y0 = H, x1 = 0, y1 = 0; stack.push(i); lab[i] = L;
     while (stack.length) { const p = stack.pop(); cnt++; const px = p % W, py = (p / W) | 0;
+      if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const q = (py + dy) * W + px + dx;
         if (q >= 0 && q < W * H && m[q] && !lab[q]) { lab[q] = L; stack.push(q); } } }
-    if (cnt > bestN) { bestN = cnt; bestL = L; }
+    comps.push({ L, cnt, x0, y0, x1, y1, edge: x0 <= 1 || y0 <= 1 || x1 >= W - 2 || y1 >= H - 2 });
   }
-  if (bestN < 20) return null;
+  const filledArea = c => { // pixels inside the blob's outer outline (holes included)
+    const bw = c.x1 - c.x0 + 3, bh = c.y1 - c.y0 + 3, out = new Uint8Array(bw * bh), st = [0]; out[0] = 1; let n = 1;
+    const isC = (x, y) => { const X = x + c.x0 - 1, Y = y + c.y0 - 1; return X >= 0 && Y >= 0 && X < W && Y < H && lab[Y * W + X] === c.L; };
+    while (st.length) { const p = st.pop(), x = p % bw, y = (p / bw) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, q = ny * bw + nx;
+        if (nx >= 0 && ny >= 0 && nx < bw && ny < bh && !out[q] && !isC(nx, ny)) { out[q] = 1; n++; st.push(q); } } }
+    return bw * bh - n;
+  };
+  let bestL = 0, bestScore = 0, bestN = 0;
+  for (const c of comps) {
+    if (c.cnt < Math.max(20, w * h * 0.002)) continue;
+    const score = filledArea(c) * (c.edge ? 0.05 : 1);
+    if (score > bestScore) { bestScore = score; bestL = c.L; bestN = c.cnt; }
+  }
+  if (!bestL || bestN < 20) return null;
   const on = (x, y) => x >= 0 && y >= 0 && x < W && y < H && lab[y * W + x] === bestL;
   let s = -1; for (let i = 0; i < W * H; i++) if (lab[i] === bestL) { s = i; break; }
   const sx = s % W, sy = (s / W) | 0;
@@ -767,7 +792,7 @@ async function elevationGain(ll) {
   const ele = [];
   for (let i = 0; i < pts.length; i += 100) {
     const ch = pts.slice(i, i + 100);
-    const r = await fetch(`${ELEV}?latitude=${ch.map(p => p[0].toFixed(5)).join(",")}&longitude=${ch.map(p => p[1].toFixed(5)).join(",")}`);
+    const r = await fetch(`${ELEV}?latitude=${ch.map(p => p[0].toFixed(5)).join(",")}&longitude=${ch.map(p => p[1].toFixed(5)).join(",")}`, { signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined });
     const j = await r.json(); if (!j.elevation) throw new Error("no elevation"); ele.push(...j.elevation);
   }
   let gain = 0; for (let i = 1; i < ele.length; i++) { const d = ele[i] - ele[i - 1]; if (d > 1) gain += d; }
@@ -836,7 +861,7 @@ function saveRoute(r) {
   list.unshift(r);
   while (list.length > 30) list.pop();
   if (!storeRoutes(list)) { while (list.length > 1 && !storeRoutes(list.slice(0, -1))) list.pop(); }
-  renderSaved(); cacheTiles(r.ll);
+  renderSaved();
 }
 function renderSaved() {
   const list = loadRoutes(), ul = $("savedList");
@@ -862,30 +887,6 @@ function renderSaved() {
 function toast(msg) {
   const t = $("toast"); t.textContent = msg; t.hidden = false;
   clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2500);
-}
-
-// ---------- offline map tiles along a route ----------
-const TILE_URL = (z, x, y) => `https://${"abcd"[(x + y) % 4]}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`;
-function tileXY(lat, lon, z) {
-  const n = 2 ** z, x = Math.floor((lon + 180) / 360 * n);
-  const r = lat * Math.PI / 180, y = Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n);
-  return [x, y];
-}
-function routeTiles(ll) {
-  const set = new Set();
-  for (const z of [14, 15, 16]) for (const [la, lo] of ll) {
-    const [x, y] = tileXY(la, lo, z);
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (z < 16 || (dx === 0 && dy === 0)) set.add(`${z}/${x + dx}/${y + dy}`);
-  }
-  return [...set];
-}
-async function cacheTiles(ll) {
-  if (!("serviceWorker" in navigator) || !navigator.serviceWorker.controller) return;
-  const tiles = routeTiles(ll).slice(0, 900);
-  // the service worker stores every tile the page fetches
-  for (let i = 0; i < tiles.length; i += 6) {
-    await Promise.allSettled(tiles.slice(i, i + 6).map(t => { const [z, x, y] = t.split("/").map(Number); return fetch(TILE_URL(z, x, y), { mode: "no-cors" }); }));
-  }
 }
 
 // ---------- Follow mode ----------
@@ -921,8 +922,8 @@ function openFollow(r) {
   const css = getComputedStyle(document.documentElement);
   if (!F.map) {
     F.map = L.map("fmap", { zoomControl: false });
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 19, subdomains: "abcd",
-      attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(F.map);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors' }).addTo(F.map);
     F.map.on("dragstart", () => { F.center = false; });
   }
   F.layers.forEach(l => F.map.removeLayer(l)); F.layers = []; F.me = F.acc = null;
@@ -979,7 +980,7 @@ $("fShare").onclick = async () => { if (await shareGpx(F.r) === "downloaded") to
 document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("follow").hidden) closeFollow(); });
 
 renderSaved();
-window.__routeArt = { traceImage, normShape, buildGraph, searchPlacements, routeShape, routeStats, projector, place, pickDiverse, progressAlong, routeGeometry, gpxText, routeTiles };
+window.__routeArt = { traceImage, normShape, buildGraph, searchPlacements, routeShape, routeStats, projector, place, pickDiverse, progressAlong, routeGeometry, gpxText };
 </script>
 </body>
 </html>
