@@ -95,7 +95,7 @@ ol.how { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
 .saved .meta span { font: 500 12px/1.4 var(--mono); color: var(--muted); }
 .saved button { padding: 8px 10px; font-size: 13px; }
 button.danger { color: var(--ghost); }
-.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 2000;
+.toast { position: fixed; left: 50%; transform: translateX(-50%); top: calc(16px + env(safe-area-inset-top, 0px)); z-index: 2000;
   background: var(--fg); color: var(--surface); padding: 10px 14px; border-radius: 10px; font-weight: 600; font-size: 14px; max-width: calc(100% - 32px); }
 /* Follow mode: full-screen map with a live position */
 #follow { position: fixed; inset: 0; z-index: 1500; background: var(--bg); display: flex; flex-direction: column; }
@@ -113,6 +113,16 @@ button.danger { color: var(--ghost); }
 .fbtns button { flex: 1; justify-content: center; }
 .me { width: 18px; height: 18px; border-radius: 50%; background: #1a73ff; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(26,115,255,.35); }
 body.following { overflow: hidden; }
+.chip[aria-pressed="true"] { background: var(--route); border-color: var(--route); color: #fff; }
+#painter { position: fixed; inset: 0; z-index: 1600; background: var(--bg); display: flex; flex-direction: column; }
+.ptStage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px; }
+#ptCanvas { touch-action: none; border-radius: 8px; max-width: 100%; max-height: 100%; cursor: crosshair; }
+.ptTools { display: grid; gap: 8px; padding: 10px max(16px, env(safe-area-inset-right, 0px)) 4px max(16px, env(safe-area-inset-left, 0px)); background: var(--surface); border-top: 1px solid var(--line); }
+#prog.mini { inset: auto 0 0 0; background: none; -webkit-backdrop-filter: none; backdrop-filter: none; pointer-events: none;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
+#prog.mini .pcard { pointer-events: auto; padding: 12px 14px; gap: 8px; }
+#prog.mini #progTitle { font-size: 14px; }
+#progStop { padding: 6px 12px; font-size: 13px; }
 /* Progress overlay, centred on screen while a route is being made */
 #prog { position: fixed; inset: 0; z-index: 1800; display: grid; place-items: center;
   padding: 16px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px));
@@ -155,12 +165,21 @@ body.following { overflow: hidden; }
   <section class="step" aria-labelledby="h2s">
     <h2 id="h2s"><span class="num">2</span>Choose a picture</h2>
     <input type="file" id="file" accept="image/*">
+    <div class="row" role="group" aria-label="Picture type">
+      <span class="hint">Picture type</span>
+      <button type="button" class="chip" data-mode="drawing" aria-pressed="false">Drawing</button>
+      <button type="button" class="chip" data-mode="photo" aria-pressed="false">Photo</button>
+    </div>
     <div class="drop">
       <figure><canvas id="srcCv" width="200" height="200"></canvas><figcaption>Your image</figcaption></figure>
-      <figure><canvas id="outCv" width="200" height="200"></canvas><figcaption>Traced outline</figcaption></figure>
+      <figure><canvas id="outCv" width="200" height="200"></canvas><figcaption>Shape to run</figcaption></figure>
     </div>
-    <div class="row"><button type="button" id="invertBtn">Swap shape and background</button></div>
-    <p class="hint">Bold silhouettes work best. The route follows the outer edge of the largest shape.</p>
+    <p class="hint" id="shapeNote"></p>
+    <div class="row">
+      <button type="button" class="primary" id="paintBtn">Paint the shape</button>
+      <button type="button" id="invertBtn">Swap shape and background</button>
+    </div>
+    <p class="hint">Bold, simple shapes make the best routes. If the shape isn't what you want, tap Paint the shape and colour in the part you want to run.</p>
   </section>
 
   <section class="step" aria-labelledby="h3s">
@@ -199,7 +218,7 @@ body.following { overflow: hidden; }
     <h2 id="h4s"><span class="num">4</span>Your route</h2>
     <p class="hint" id="areaNote"></p>
     <div class="cands" id="cands"></div>
-    <button type="button" id="moreBtn" hidden>Check more places</button>
+    <button type="button" id="moreBtn" hidden>Keep searching</button>
     <dl class="stats">
       <div><dt>Distance</dt><dd id="sDist">–</dd></div>
       <div><dt>Est. time</dt><dd id="sTime">–</dd></div>
@@ -248,10 +267,33 @@ body.following { overflow: hidden; }
     <button type="button" id="fExit">Exit</button>
   </div>
 </div>
+<div id="painter" hidden role="dialog" aria-modal="true" aria-labelledby="ptTitle">
+  <div class="fbar">
+    <p id="ptTitle" style="margin:0;font:600 16px/1.3 var(--display)">Colour in the shape you want to run</p>
+    <p class="hint" style="margin:0">Paint over the main character or object. The route follows the outer edge of what you paint.</p>
+  </div>
+  <div class="ptStage"><canvas id="ptCanvas" aria-label="Your picture. Drag to paint the shape."></canvas></div>
+  <div class="ptTools">
+    <div class="row">
+      <button type="button" class="chip" id="ptPaint" aria-pressed="true">Paint</button>
+      <button type="button" class="chip" id="ptErase" aria-pressed="false">Erase</button>
+      <label class="hint" for="ptSize" style="display:flex;gap:6px;align-items:center">Brush <input type="range" id="ptSize" min="2" max="18" value="7"></label>
+    </div>
+    <div class="row">
+      <button type="button" id="ptUndo">Undo</button>
+      <button type="button" id="ptClear">Clear</button>
+      <button type="button" id="ptAuto">Auto-detect</button>
+    </div>
+  </div>
+  <div class="fbtns">
+    <button type="button" id="ptCancel">Cancel</button>
+    <button type="button" class="primary" id="ptDone">Use this shape</button>
+  </div>
+</div>
 <div class="toast" id="toast" hidden role="status"></div>
 <div id="prog" hidden>
   <div class="pcard" role="progressbar" aria-labelledby="progTitle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progBar">
-    <p id="progTitle">Drawing your route</p>
+    <div class="prow"><p id="progTitle">Drawing your route</p><button type="button" id="progStop" hidden>Stop</button></div>
     <div class="ptrack"><div class="pfill" id="progFill"></div></div>
     <div class="prow"><span id="progLabel">Starting…</span><b id="progPct">0%</b></div>
   </div>
@@ -334,119 +376,303 @@ $("gpsBtn").onclick = () => {
 };
 
 // ---------- image tracing ----------
+// Pipeline: picture → work image (≤200 px) → subject mask (drawing: dark/light split;
+// photo: what stands out from the colours around the edges; or painted by hand)
+// → pixelated to a 64-cell grid → outer outline → route shape.
+const WORK = 200, CELLS = 64;
 $("file").onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   S.imgName = (f.name || "").replace(/\.[^.]+$/, "").replace(/^(IMG|image|photo)[_-]?\d*$/i, "").slice(0, 40);
   const img = new Image();
-  img.onload = () => { S.img = img; S.invert = false; traceAndShow(); };
+  img.onload = () => {
+    S.img = img; S.invert = false; S.work = workImage(img);
+    setMode(looksLikePhoto(S.work) ? "photo" : "drawing");
+  };
   img.src = URL.createObjectURL(f);
 };
-$("invertBtn").onclick = () => { if (S.img) { S.invert = !S.invert; traceAndShow(); } };
-
-function traceAndShow() {
-  const res = traceImage(S.img, S.invert);
+$("invertBtn").onclick = () => { if (S.img) { S.invert = !S.invert; autoMask(); } };
+document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => { if (S.img) setMode(b.dataset.mode); }));
+function setMode(mode) {
+  S.mode = mode;
+  document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  autoMask();
+}
+function autoMask() {
+  const ink = S.mode === "photo" ? inkFromPhoto(S.work, S.invert) : inkFromDrawing(S.work, S.invert);
+  S.mask = selectSubject(ink, S.work.w, S.work.h, true); S.painted = false;
+  shapeFromMask();
+}
+function shapeFromMask() {
+  const { w, h } = S.work;
+  const px = S.mask ? pixelate(S.mask, w, h, CELLS) : null;
+  const sel = px ? selectSubject(px.m, px.W, px.H, false) : null;
+  S.pix = sel ? { ...px, m: sel } : null;
+  S.contour = S.pix ? contourFromMask(S.pix.m, S.pix.W, S.pix.H) : null;
+  drawSource(); drawOutline(); updateGo();
+  $("shapeNote").textContent = !S.img ? "" : !S.contour ? "No clear shape found. Tap Paint the shape and colour in what you want to run."
+    : S.painted ? "Using the shape you painted." : S.mode === "photo" ? "Found the main object in your photo. If it's wrong, tap Paint the shape." : "";
+}
+function drawSource() {
   const sc = $("srcCv").getContext("2d"); sc.clearRect(0, 0, 200, 200);
+  if (!S.img) return;
   const k = Math.min(200 / S.img.width, 200 / S.img.height);
   sc.drawImage(S.img, (200 - S.img.width * k) / 2, (200 - S.img.height * k) / 2, S.img.width * k, S.img.height * k);
-  S.contour = res ? res.pts : null;
-  drawOutline();
-  updateGo();
 }
-function drawOutline() {
+function drawOutline() { // the pixelated shape, with the outline the route will follow on top
   const c = $("outCv"), g = c.getContext("2d"); g.clearRect(0, 0, 200, 200);
-  if (!S.contour) { g.fillStyle = getComputedStyle(document.body).color; g.font = "13px sans-serif"; g.fillText("No shape found", 50, 104); return; }
-  let mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
-  for (const [x, y] of S.contour) { mnx = Math.min(mnx, x); mny = Math.min(mny, y); mxx = Math.max(mxx, x); mxy = Math.max(mxy, y); }
-  const k = 170 / Math.max(mxx - mnx, mxy - mny);
-  g.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--route"); g.lineWidth = 3; g.lineJoin = "round";
-  g.beginPath();
-  S.contour.forEach(([x, y], i) => { const px = 100 + (x - (mnx + mxx) / 2) * k, py = 100 - (y - (mny + mxy) / 2) * k; i ? g.lineTo(px, py) : g.moveTo(px, py); });
+  const css = getComputedStyle(document.documentElement), route = css.getPropertyValue("--route").trim();
+  if (!S.contour) { g.fillStyle = css.getPropertyValue("--muted").trim(); g.font = "13px sans-serif"; g.textAlign = "center"; g.fillText("No shape found", 100, 104); return; }
+  const { m, W, H } = S.pix, k = 180 / Math.max(W, H), ox = (200 - W * k) / 2, oy = (200 - H * k) / 2;
+  g.fillStyle = route; g.globalAlpha = .22;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x]) g.fillRect(ox + x * k, oy + y * k, k - .6, k - .6);
+  g.globalAlpha = 1; g.strokeStyle = route; g.lineWidth = 2.5; g.lineJoin = "round"; g.beginPath();
+  S.contour.forEach(([x, y], i) => { const px = ox + (x + .5) * k, py = oy + (-y + .5) * k; i ? g.lineTo(px, py) : g.moveTo(px, py); });
   g.closePath(); g.stroke();
 }
 
-function traceImage(img, invert) {
-  const MAX = 220, k = Math.min(1, MAX / Math.max(img.width, img.height));
+function workImage(img) {
+  const k = Math.min(1, WORK / Math.max(img.width, img.height));
   const w = Math.max(8, Math.round(img.width * k)), h = Math.max(8, Math.round(img.height * k));
   const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-  const g = cv.getContext("2d"); g.drawImage(img, 0, 0, w, h);
-  const d = g.getImageData(0, 0, w, h).data, n = w * h;
+  const g = cv.getContext("2d", { willReadFrequently: true }); g.drawImage(img, 0, 0, w, h);
+  return { w, h, d: g.getImageData(0, 0, w, h).data };
+}
+function looksLikePhoto({ w, h, d }) {
+  // Drawings and screenshots are mostly flat colour: 75–98% of side-by-side pixels are
+  // identical. In photos almost none are, because light, texture and sensor noise vary.
+  let flat = 0, all = 0, transp = 0;
+  for (let y = 0; y < h; y++) for (let x = 1; x < w; x++) {
+    const i = (y * w + x) * 4, j = i - 4; all++;
+    if (d[i + 3] < 128) transp++;
+    if (d[i] === d[j] && d[i + 1] === d[j + 1] && d[i + 2] === d[j + 2]) flat++;
+  }
+  return transp / all < 0.05 && flat / all < 0.35;
+}
+function otsu(vals) { // vals: 0..255 integers
+  const hist = new Array(256).fill(0); for (const v of vals) hist[v]++;
+  let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sB = 0, wB = 0, best = 0, thr = 128; const n = vals.length;
+  for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = n - wB; if (!wF) break; sB += t * hist[t];
+    const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) ** 2; if (v > best) { best = v; thr = t; } }
+  return thr;
+}
+function inkFromDrawing({ w, h, d }, invert) {
+  const n = w * h, ink = new Uint8Array(n);
   let transp = 0; for (let i = 0; i < n; i++) if (d[i * 4 + 3] < 128) transp++;
-  const ink = new Uint8Array(n);
   if (transp / n > 0.05) { for (let i = 0; i < n; i++) ink[i] = d[i * 4 + 3] >= 128 ? 1 : 0; }
   else {
-    const lum = new Uint8Array(n), hist = new Array(256).fill(0);
-    for (let i = 0; i < n; i++) { const v = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) | 0; lum[i] = v; hist[v]++; }
-    // Otsu threshold
-    let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
-    let sB = 0, wB = 0, best = 0, thr = 128;
-    for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = n - wB; if (!wF) break; sB += t * hist[t];
-      const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) ** 2; if (v > best) { best = v; thr = t; } }
+    const lum = new Uint8Array(n);
+    for (let i = 0; i < n; i++) lum[i] = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) | 0;
+    const thr = otsu(lum);
     for (let i = 0; i < n; i++) ink[i] = lum[i] <= thr ? 1 : 0;
-    // If the border is mostly "ink", the picture is light-on-dark: flip it.
-    let b = 0, bt = 0;
-    for (let x = 0; x < w; x++) { b += ink[x] + ink[(h - 1) * w + x]; bt += 2; }
-    for (let y = 0; y < h; y++) { b += ink[y * w] + ink[y * w + w - 1]; bt += 2; }
-    if (b / bt > 0.5) for (let i = 0; i < n; i++) ink[i] ^= 1;
+    if (borderShare(ink, w, h) > 0.5) for (let i = 0; i < n; i++) ink[i] ^= 1; // light-on-dark picture
   }
   if (invert) for (let i = 0; i < n; i++) ink[i] ^= 1;
-  // Pick the main subject. Screenshots and photos have bars, frames and text along
-  // the edges, and line-art characters are mostly "background" inside a thin outline,
-  // so rank each blob by the area its outline encloses, and set aside blobs that
-  // touch the image edge.
+  return ink;
+}
+function borderShare(m, w, h) {
+  let b = 0, t = 0;
+  for (let x = 0; x < w; x++) { b += m[x] + m[(h - 1) * w + x]; t += 2; }
+  for (let y = 0; y < h; y++) { b += m[y * w] + m[y * w + w - 1]; t += 2; }
+  return b / t;
+}
+// Photos: the main object is whatever looks least like the colours around the edges of
+// the picture. Brightness counts for less than colour, so shadows and uneven light don't
+// split the object, and pixels near the centre get a small boost.
+function inkFromPhoto({ w, h, d }, invert) {
+  const n = w * h;
+  // blur twice to smooth out noise and texture
+  let r = new Float32Array(n), g = new Float32Array(n), b = new Float32Array(n);
+  for (let i = 0; i < n; i++) { r[i] = d[i * 4]; g[i] = d[i * 4 + 1]; b[i] = d[i * 4 + 2]; }
+  for (let pass = 0; pass < 2; pass++) [r, g, b] = [r, g, b].map(ch => boxBlur(ch, w, h, 2));
+  const L = new Float32Array(n), A = new Float32Array(n), B = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const lab = rgbToLab(r[i], g[i], b[i]); L[i] = lab[0]; A[i] = lab[1]; B[i] = lab[2]; }
+  const WL = 0.4; // brightness weight
+  const border = [];
+  const band = Math.max(2, Math.round(Math.min(w, h) * 0.04));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+    if (x < band || y < band || x >= w - band || y >= h - band) { const i = y * w + x; border.push([L[i] * WL, A[i], B[i]]); }
+  const centers = kmeans(border, 6, 10);
+  const D = new Float32Array(n); let maxD = 1;
+  const cx = (w - 1) / 2, cy = (h - 1) / 2, rmax = Math.hypot(cx, cy);
+  for (let i = 0; i < n; i++) {
+    const p = [L[i] * WL, A[i], B[i]]; let m = Infinity;
+    for (const c of centers) m = Math.min(m, (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2);
+    const x = i % w, y = (i / w) | 0;
+    D[i] = Math.sqrt(m) * (0.7 + 0.3 * (1 - Math.hypot(x - cx, y - cy) / rmax));
+    if (D[i] > maxD) maxD = D[i];
+  }
+  const q = Uint8Array.from(D, v => Math.min(255, (v / maxD) * 255) | 0);
+  const thr = otsu(q), ink = new Uint8Array(n);
+  for (let i = 0; i < n; i++) ink[i] = (q[i] > thr) !== !!invert ? 1 : 0;
+  return ink;
+}
+function boxBlur(src, w, h, rad) {
+  const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let s = 0, c = 0; for (let k = -rad; k <= rad; k++) { const xx = x + k; if (xx >= 0 && xx < w) { s += src[y * w + xx]; c++; } } tmp[y * w + x] = s / c; }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let s = 0, c = 0; for (let k = -rad; k <= rad; k++) { const yy = y + k; if (yy >= 0 && yy < h) { s += tmp[yy * w + x]; c++; } } out[y * w + x] = s / c; }
+  return out;
+}
+function rgbToLab(r, g, b) {
+  const f = c => { c /= 255; return c > 0.04045 ? ((c + 0.055) / 1.055) ** 2.4 : c / 12.92; };
+  const R = f(r), G = f(g), Bl = f(b);
+  const X = (R * 0.4124 + G * 0.3576 + Bl * 0.1805) / 0.95047, Y = R * 0.2126 + G * 0.7152 + Bl * 0.0722, Z = (R * 0.0193 + G * 0.1192 + Bl * 0.9505) / 1.08883;
+  const t = v => v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116;
+  const fx = t(X), fy = t(Y), fz = t(Z);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+function kmeans(pts, k, iters) {
+  if (pts.length <= k) return pts.map(p => p.slice());
+  const c = Array.from({ length: k }, (_, i) => pts[Math.floor((i + 0.5) * pts.length / k)].slice());
+  for (let it = 0; it < iters; it++) {
+    const s = Array.from({ length: k }, () => [0, 0, 0, 0]);
+    for (const p of pts) { let bi = 0, bd = Infinity; c.forEach((q, j) => { const dd = (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2; if (dd < bd) { bd = dd; bi = j; } });
+      s[bi][0] += p[0]; s[bi][1] += p[1]; s[bi][2] += p[2]; s[bi][3]++; }
+    s.forEach((v, j) => { if (v[3]) c[j] = [v[0] / v[3], v[1] / v[3], v[2] / v[3]]; });
+  }
+  return c;
+}
+// Pick the main subject and return it as a filled mask. Blobs are ranked by the area
+// their outline encloses (a line-art character is mostly "background" inside a thin
+// outline); with edgePenalty, blobs touching the picture edge (status bars, bottom bars,
+// frames, sky) count for only 5%.
+function selectSubject(ink, w, h, edgePenalty) {
   const W = w + 2, H = h + 2, m = new Uint8Array(W * H);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[(y + 1) * W + x + 1] = ink[y * w + x];
-  // close 1-px gaps so a hand-drawn or anti-aliased outline stays one piece
-  const g2 = m.slice();
+  const g2 = m.slice(); // close 1-px gaps so a hand-drawn or anti-aliased outline stays one piece
   for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) if (!m[y * W + x]) {
-    let n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) n += m[(y + dy) * W + x + dx];
-    if (n >= 2) g2[y * W + x] = 1;
+    let c = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) c += m[(y + dy) * W + x + dx];
+    if (c >= 2) g2[y * W + x] = 1;
   }
   m.set(g2);
-  const lab = new Int32Array(W * H); let L = 0; const stack = [], comps = [];
+  const lab = new Int32Array(W * H); let Lb = 0; const stack = [], comps = [];
   for (let i = 0; i < W * H; i++) if (m[i] && !lab[i]) {
-    L++; let cnt = 0, x0 = W, y0 = H, x1 = 0, y1 = 0; stack.push(i); lab[i] = L;
+    Lb++; let cnt = 0, x0 = W, y0 = H, x1 = 0, y1 = 0; stack.push(i); lab[i] = Lb;
     while (stack.length) { const p = stack.pop(); cnt++; const px = p % W, py = (p / W) | 0;
       if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const q = (py + dy) * W + px + dx;
-        if (q >= 0 && q < W * H && m[q] && !lab[q]) { lab[q] = L; stack.push(q); } } }
-    comps.push({ L, cnt, x0, y0, x1, y1, edge: x0 <= 1 || y0 <= 1 || x1 >= W - 2 || y1 >= H - 2 });
+        if (q >= 0 && q < W * H && m[q] && !lab[q]) { lab[q] = Lb; stack.push(q); } } }
+    comps.push({ L: Lb, cnt, x0, y0, x1, y1, edge: x0 <= 1 || y0 <= 1 || x1 >= W - 2 || y1 >= H - 2 });
   }
-  const filledArea = c => { // pixels inside the blob's outer outline (holes included)
-    const bw = c.x1 - c.x0 + 3, bh = c.y1 - c.y0 + 3, out = new Uint8Array(bw * bh), st = [0]; out[0] = 1; let n = 1;
-    const isC = (x, y) => { const X = x + c.x0 - 1, Y = y + c.y0 - 1; return X >= 0 && Y >= 0 && X < W && Y < H && lab[Y * W + X] === c.L; };
-    while (st.length) { const p = st.pop(), x = p % bw, y = (p / bw) | 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, q = ny * bw + nx;
-        if (nx >= 0 && ny >= 0 && nx < bw && ny < bh && !out[q] && !isC(nx, ny)) { out[q] = 1; n++; st.push(q); } } }
-    return bw * bh - n;
-  };
-  let bestL = 0, bestScore = 0, bestN = 0;
+  let best = null, bestScore = 0;
   for (const c of comps) {
-    if (c.cnt < Math.max(20, w * h * 0.002)) continue;
-    const score = filledArea(c) * (c.edge ? 0.05 : 1);
-    if (score > bestScore) { bestScore = score; bestL = c.L; bestN = c.cnt; }
+    if (c.cnt < Math.max(6, w * h * 0.002)) continue;
+    const f = fillBlob(lab, W, H, c), score = f.area * (edgePenalty && c.edge ? 0.05 : 1);
+    if (score > bestScore) { bestScore = score; best = f; }
   }
-  if (!bestL || bestN < 20) return null;
-  const on = (x, y) => x >= 0 && y >= 0 && x < W && y < H && lab[y * W + x] === bestL;
-  let s = -1; for (let i = 0; i < W * H; i++) if (lab[i] === bestL) { s = i; break; }
-  const sx = s % W, sy = (s / W) | 0;
+  if (!best) return null;
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) out[y * w + x] = best.inside(x + 1, y + 1) ? 1 : 0;
+  return out;
+}
+function fillBlob(lab, W, H, c) { // the blob with its holes filled in
+  const bw = c.x1 - c.x0 + 3, bh = c.y1 - c.y0 + 3, outside = new Uint8Array(bw * bh), st = [0]; outside[0] = 1; let n = 1;
+  const isC = (x, y) => { const X = x + c.x0 - 1, Y = y + c.y0 - 1; return X >= 0 && Y >= 0 && X < W && Y < H && lab[Y * W + X] === c.L; };
+  while (st.length) { const p = st.pop(), x = p % bw, y = (p / bw) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, q = ny * bw + nx;
+      if (nx >= 0 && ny >= 0 && nx < bw && ny < bh && !outside[q] && !isC(nx, ny)) { outside[q] = 1; n++; st.push(q); } } }
+  return { area: bw * bh - n, inside: (X, Y) => { const x = X - c.x0 + 1, y = Y - c.y0 + 1; return x >= 0 && y >= 0 && x < bw && y < bh && !outside[y * bw + x]; } };
+}
+function pixelate(mask, w, h, cells) { // majority vote per block: fewer, cleaner corners for the router
+  const s = Math.max(w, h) / cells, W = Math.max(4, Math.round(w / s)), H = Math.max(4, Math.round(h / s)), m = new Uint8Array(W * H);
+  for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++) {
+    const x0 = Math.floor(X * w / W), x1 = Math.max(x0 + 1, Math.floor((X + 1) * w / W)), y0 = Math.floor(Y * h / H), y1 = Math.max(y0 + 1, Math.floor((Y + 1) * h / H));
+    let on = 0, all = 0; for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { on += mask[y * w + x]; all++; }
+    m[Y * W + X] = on * 2 >= all ? 1 : 0;
+  }
+  return { m, W, H };
+}
+function contourFromMask(mask, w, h) { // outer outline of a filled mask (Moore-neighbour tracing)
+  const W = w + 2, H = h + 2, on = (x, y) => x > 0 && y > 0 && x <= w && y <= h && mask[(y - 1) * w + x - 1] === 1;
+  let sx = -1, sy = -1;
+  outer: for (let y = 1; y <= h; y++) for (let x = 1; x <= w; x++) if (on(x, y)) { sx = x; sy = y; break outer; }
+  if (sx < 0) return null;
   const DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
   const pts = [[sx, sy]]; let cx = sx, cy = sy, dir = 7, first = -1;
   for (let it = 0; it < 4 * W * H; it++) {
     const start = dir % 2 === 0 ? (dir + 7) % 8 : (dir + 6) % 8;
     let found = -1;
     for (let j = 0; j < 8; j++) { const dd = (start + j) % 8; if (on(cx + DIRS[dd][0], cy + DIRS[dd][1])) { found = dd; break; } }
-    if (found < 0) break; // single pixel
+    if (found < 0) break;
     if (cx === sx && cy === sy && it > 0 && found === first) break;
     if (first < 0) first = found;
-    cx += DIRS[found][0]; cy += DIRS[found][1]; dir = found;
-    pts.push([cx, cy]);
+    cx += DIRS[found][0]; cy += DIRS[found][1]; dir = found; pts.push([cx, cy]);
   }
   pts.pop();
-  if (pts.length < 8) return null;
-  // image coords (y down) -> math coords (y up), simplify, resample
-  const poly = rdpClosed(pts.map(([x, y]) => [x, -y]), 0.9);
-  return { pts: resampleClosed(poly, 400) };
+  if (pts.length < 6) return null;
+  const poly = rdpClosed(pts.map(([x, y]) => [x - 1, -(y - 1)]), 0.7); // image (y down) → math (y up)
+  return resampleClosed(poly, 400);
 }
+function traceImage(img, invert) { // kept for the tests: drawing pipeline end to end
+  const work = workImage(img), m = selectSubject(inkFromDrawing(work, invert), work.w, work.h, true);
+  if (!m) return null; const px = pixelate(m, work.w, work.h, CELLS);
+  const pts = contourFromMask(px.m, px.W, px.H); return pts ? { pts } : null;
+}
+
+// ---------- paint the shape ----------
+const PT = { brush: 7, erase: false, undo: [], drawing: false, last: null };
+$("paintBtn").onclick = openPainter;
+function openPainter() {
+  if (!S.img) return;
+  PT.mask = S.mask ? S.mask.slice() : new Uint8Array(S.work.w * S.work.h); PT.undo = [];
+  $("painter").hidden = false; document.body.classList.add("following");
+  setTool(false); requestAnimationFrame(renderPainter);
+}
+function closePainter(apply) {
+  $("painter").hidden = true; document.body.classList.remove("following");
+  if (apply) { S.mask = PT.mask.some(v => v) ? PT.mask : null; S.painted = true; shapeFromMask(); }
+}
+function setTool(erase) { PT.erase = erase; $("ptPaint").setAttribute("aria-pressed", String(!erase)); $("ptErase").setAttribute("aria-pressed", String(erase)); }
+$("ptPaint").onclick = () => setTool(false);
+$("ptErase").onclick = () => setTool(true);
+$("ptSize").oninput = e => { PT.brush = +e.target.value; };
+$("ptUndo").onclick = () => { if (PT.undo.length) { PT.mask = PT.undo.pop(); renderPainter(); } };
+$("ptClear").onclick = () => { PT.undo.push(PT.mask.slice()); PT.mask.fill(0); renderPainter(); };
+$("ptAuto").onclick = () => {
+  PT.undo.push(PT.mask.slice());
+  const ink = S.mode === "photo" ? inkFromPhoto(S.work, S.invert) : inkFromDrawing(S.work, S.invert);
+  PT.mask = selectSubject(ink, S.work.w, S.work.h, true) || new Uint8Array(S.work.w * S.work.h); renderPainter();
+};
+$("ptCancel").onclick = () => closePainter(false);
+$("ptDone").onclick = () => closePainter(true);
+function painterGeom() {
+  const cv = $("ptCanvas"), box = cv.parentElement.getBoundingClientRect(), { w, h } = S.work;
+  const k = Math.min(box.width / w, box.height / h), dpr = window.devicePixelRatio || 1;
+  const cw = Math.max(1, Math.floor(w * k)), ch = Math.max(1, Math.floor(h * k));
+  if (cv.width !== Math.round(cw * dpr)) { cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr); cv.style.width = cw + "px"; cv.style.height = ch + "px"; }
+  return { k, dpr, cw, ch };
+}
+function renderPainter() {
+  if ($("painter").hidden) return;
+  const { dpr, cw, ch } = painterGeom(), cv = $("ptCanvas"), g = cv.getContext("2d"), { w, h } = S.work;
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, cw, ch);
+  g.drawImage(S.img, 0, 0, cw, ch);
+  const ov = document.createElement("canvas"); ov.width = w; ov.height = h;
+  const og = ov.getContext("2d"), id = og.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) if (PT.mask[i]) { id.data[i * 4] = 35; id.data[i * 4 + 1] = 71; id.data[i * 4 + 2] = 255; id.data[i * 4 + 3] = 140; }
+  og.putImageData(id, 0, 0);
+  g.imageSmoothingEnabled = false; g.drawImage(ov, 0, 0, cw, ch);
+}
+function stamp(x, y) {
+  const { w, h } = S.work, r = PT.brush, v = PT.erase ? 0 : 1;
+  for (let yy = Math.max(0, Math.floor(y - r)); yy <= Math.min(h - 1, Math.ceil(y + r)); yy++)
+    for (let xx = Math.max(0, Math.floor(x - r)); xx <= Math.min(w - 1, Math.ceil(x + r)); xx++)
+      if ((xx - x) ** 2 + (yy - y) ** 2 <= r * r) PT.mask[yy * w + xx] = v;
+}
+function ptPos(e) { const r = $("ptCanvas").getBoundingClientRect(), { k } = painterGeom(); return [(e.clientX - r.left) / k, (e.clientY - r.top) / k]; }
+$("ptCanvas").addEventListener("pointerdown", e => {
+  e.preventDefault(); $("ptCanvas").setPointerCapture(e.pointerId);
+  PT.undo.push(PT.mask.slice()); if (PT.undo.length > 25) PT.undo.shift();
+  PT.drawing = true; PT.last = ptPos(e); stamp(...PT.last); renderPainter();
+});
+$("ptCanvas").addEventListener("pointermove", e => {
+  if (!PT.drawing) return; e.preventDefault();
+  const p = ptPos(e), [lx, ly] = PT.last, steps = Math.max(1, Math.ceil(Math.hypot(p[0] - lx, p[1] - ly) / (PT.brush / 2)));
+  for (let i = 1; i <= steps; i++) stamp(lx + (p[0] - lx) * i / steps, ly + (p[1] - ly) * i / steps);
+  PT.last = p; if (!PT.raf) PT.raf = requestAnimationFrame(() => { PT.raf = 0; renderPainter(); });
+});
+["pointerup", "pointercancel"].forEach(t => $("ptCanvas").addEventListener(t, () => { PT.drawing = false; }));
+window.addEventListener("resize", () => renderPainter());
 function rdp(p, eps) {
   if (p.length < 3) return p.slice();
   let dmax = 0, idx = 0; const a = p[0], b = p[p.length - 1];
@@ -490,9 +716,9 @@ function place(unit, P, rot, cx, cy) {
 }
 
 // ---------- street graph ----------
-async function overpassQL(q) {
+async function overpassQL(q, pref = 0) { // pref: which server to try first, so parallel searches spread out
   let lastErr;
-  for (const url of OVERPASS) {
+  for (const url of OVERPASS.slice(pref % OVERPASS.length).concat(OVERPASS.slice(0, pref % OVERPASS.length))) {
     try {
       const r = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" } });
       if (!r.ok) throw new Error("HTTP " + r.status);
@@ -501,8 +727,8 @@ async function overpassQL(q) {
   }
   throw new Error("Map data servers are busy (" + (lastErr && lastErr.message) + "). Try again in a minute.");
 }
-function overpass(bb, hw = HIGHWAYS) { // bb = [s, w, n, e]
-  return overpassQL(`[out:json][timeout:120];way["highway"~"^(${hw})$"]["area"!="yes"](${bb.map(v => v.toFixed(5)).join(",")})->.w;.w out qt;node(w.w);out skel qt;`);
+function overpass(bb, hw = HIGHWAYS, pref = 0) { // bb = [s, w, n, e]
+  return overpassQL(`[out:json][timeout:120];way["highway"~"^(${hw})$"]["area"!="yes"](${bb.map(v => v.toFixed(5)).join(",")})->.w;.w out qt;node(w.w);out skel qt;`, pref);
 }
 function isTrail(t) {
   const hw = t.highway, sf = t.surface || "";
@@ -684,7 +910,7 @@ window.__routeArtProgress = []; // read by the tests
 function progressOpen(title) {
   Object.assign(PB, { v: 0, at: 0, upTo: 0 });
   $("progTitle").textContent = title || "Drawing your route"; $("progLabel").textContent = "Starting…";
-  $("prog").hidden = false; renderProgress();
+  $("prog").classList.remove("mini"); $("progStop").hidden = true; $("prog").hidden = false; renderProgress();
   clearInterval(PB.timer); PB.timer = setInterval(() => {
     if (PB.v < PB.at) PB.v = Math.min(PB.at, PB.v + Math.max(0.6, (PB.at - PB.v) * 0.35));
     else if (PB.v < PB.upTo - 0.5) PB.v += (PB.upTo - PB.v) * 0.025;
@@ -704,7 +930,7 @@ function renderProgress() {
 async function progressClose(ok) {
   clearInterval(PB.timer);
   if (ok) { PB.v = 100; $("progLabel").textContent = "Done"; renderProgress(); await new Promise(r => setTimeout(r, 450)); }
-  $("prog").hidden = true;
+  $("prog").hidden = true; $("prog").classList.remove("mini");
 }
 
 // ---------- main flow ----------
@@ -741,7 +967,7 @@ document.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () =
 $("goBtn").onclick = () => { progressOpen("Drawing your route");
   run().then(() => progressClose(true), e => { progressClose(false); status(e.message || String(e), true); console.error(e); })
     .finally(() => { delete $("goStatus").dataset.busy; updateGo(); }); };
-$("moreBtn").onclick = () => { progressOpen("Checking more places");
+$("moreBtn").onclick = () => { progressOpen("Searching more places");
   searchMore().then(() => progressClose(true), e => { progressClose(false); status(e.message || String(e), true); console.error(e); }); };
 function status(t, err) { $("goStatus").className = "status" + (err ? " err" : ""); $("goStatus").textContent = t; }
 const tick = () => new Promise(r => setTimeout(r, 0));
@@ -757,7 +983,7 @@ function settings() {
 async function run() {
   $("goStatus").dataset.busy = "1"; $("goBtn").disabled = true; $("moreBtn").hidden = true;
   const opts = settings(), where = whereValue();
-  S.region = null;
+  S.region = null; S.userPicked = false;
   if (where) return startRegion(where, opts, []);
   const near = await runNear(opts);
   if (near.length && near[0].match >= 60)
@@ -842,50 +1068,81 @@ async function startRegion(q, opts, seed) {
   const places = await regionPlaces(reg);
   progressTo(base + span * 0.1);
   if (!places.length) throw new Error(`Couldn't find places to try in ${reg.name}. Try a bigger area, or The World.`);
-  S.region = { name: reg.name, queue: places, total: places.length, checked: 0, opts, pool: seed.map(c => ({ ...c, place: "Near your start" })) };
+  S.region = { name: reg.name, queue: places, total: places.length, checked: 0, opts, announced: new Set(), pool: seed.map(c => ({ ...c, place: "Near your start" })) };
   return searchMore();
 }
 
+// Place searches run in the background: three places at a time (one per map server),
+// results appear as soon as any place fits, 90%+ matches pop up straight away, and the
+// progress card shrinks to a strip with a Stop button so the map stays usable.
+const RUN_LIMIT = 24, HIT = 90;
 async function searchMore() {
   const R = S.region; if (!R) return;
-  $("goStatus").dataset.busy = "1"; $("goBtn").disabled = true; $("moreBtn").disabled = true;
+  $("goStatus").dataset.busy = "1"; $("goBtn").disabled = true; $("moreBtn").disabled = true; $("moreBtn").hidden = true;
+  R.stop = false;
+  const stopBtn = $("progStop"); stopBtn.hidden = false; stopBtn.disabled = false;
+  stopBtn.onclick = () => { R.stop = true; stopBtn.disabled = true; progressTo(PB.at, "Stopping after the places being checked…"); };
   try {
-    const batch = R.queue.splice(0, 8), n = batch.length, from = PB.at, span = 100 - from;
+    const n = Math.min(RUN_LIMIT, R.queue.length), from = PB.at, span = 100 - from;
     const frac = new Map(); let started = 0;
-    const upd = (label) => { // each place is an equal share of what's left of the bar
+    const upd = label => { // each place is an equal share of what's left of the bar
       let done = 0, ahead = 0; for (const [, f] of frac) { done += f.at; ahead += f.upTo; }
       progressTo(from + span * done / n, label, from + span * ahead / n);
     };
-    const best = () => R.pool.reduce((b, c) => (!b || c.match > b.match ? c : b), null);
+    const hits = () => new Set(R.pool.filter(c => c.match >= HIT).map(c => c.place)).size;
+    const enough = () => R.stop || started >= n || (hits() >= 3 && started >= 8);
     status(`Checking places in ${R.name}…`);
-    const worker = async () => {
-      while (batch.length) {
-        const pl = batch.shift(), k = ++started, f = { at: 0, upTo: 0.6 }; frac.set(pl, f);
-        const label = `Checking ${pl.name} · ${k} of ${n}`;
-        upd(label);
-        try { R.pool.push(...await evalPlace(pl, R.opts, (at, upTo) => { f.at = at; f.upTo = upTo; upd(label); })); } catch (e) { console.warn(pl.name, e); }
-        f.at = f.upTo = 1; upd();
-        R.checked++; const b = best();
+    const worker = async wi => {
+      while (!enough() && R.queue.length) {
+        const pl = R.queue.shift(), k = ++started, f = { at: 0, upTo: 0.6 }; frac.set(pl, f);
+        const label = `Checking ${pl.name} · ${k} of ${n}`; upd(label);
+        let fresh = [];
+        try { fresh = await evalPlace(pl, R.opts, (at, upTo) => { f.at = at; f.upTo = upTo; upd(label); }, wi); R.pool.push(...fresh); }
+        catch (e) { console.warn(pl.name, e); }
+        R.checked++; f.at = f.upTo = 1; upd();
+        liveUpdate(R, fresh);
+        const b = topPlaces(R.pool)[0];
         status(`Checked ${R.checked} of ${R.total} places in ${R.name}${b ? ` · best so far ${b.match}% in ${b.place}` : ""}…`);
       }
     };
-    await Promise.all([worker(), worker()]); // public map servers allow two requests at a time
-    const top = [];
-    for (const c of R.pool.slice().sort((a, b) => b.match - a.match)) if (top.length < 3 && !top.some(t => t.place === c.place)) top.push(c);
-    if (!top.length) throw new Error(`Nothing fit within ${R.opts.maxM / 1000} km in the places checked so far.${R.queue.length ? " Tap Check more places." : ""}`);
-    showResults(top, `Best fits after checking ${R.checked} of ${R.total} places in ${R.name}.${R.queue.length ? " Check more places to keep looking." : ""}`);
+    await Promise.all([worker(0), worker(1), worker(2)]);
+    const top = topPlaces(R.pool);
+    if (!top.length) throw new Error(`Nothing fit within ${R.opts.maxM / 1000} km in the places checked so far.${R.queue.length ? " Tap Keep searching." : ""}`);
+    liveUpdate(R, []);
+    $("areaNote").textContent = `Best fits after checking ${R.checked} of ${R.total} places in ${R.name}.${R.queue.length ? " Keep searching to try more places." : ""}`;
+    status(`Done. Checked ${R.checked} of ${R.total} places · best ${top[0].match}% in ${top[0].place}.`);
   } finally {
-    delete $("goStatus").dataset.busy; updateGo(); $("moreBtn").disabled = false;
-    $("moreBtn").hidden = !R.queue.length;
-    $("moreBtn").textContent = `Check ${Math.min(8, R.queue.length)} more places (${R.queue.length} left)`;
+    delete $("goStatus").dataset.busy; updateGo(); stopBtn.hidden = true;
+    $("moreBtn").disabled = false; $("moreBtn").hidden = !R.queue.length;
+    $("moreBtn").textContent = `Keep searching (${R.queue.length} places left)`;
   }
 }
+function topPlaces(pool) { // best route per place, top 3 places
+  const top = [];
+  for (const c of pool.slice().sort((a, b) => b.match - a.match)) if (c.match >= 35 && top.length < 3 && !top.some(t => t.place === c.place)) top.push(c);
+  return top;
+}
+function liveUpdate(R, fresh) {
+  const top = topPlaces(R.pool); if (!top.length) return;
+  const note = `Searching ${R.name}: ${R.checked} of ${R.total} places checked. The list updates as better matches turn up.`;
+  if ($("results").hidden || !S.cands.length) { showResults(top, note); $("prog").classList.add("mini"); }
+  else {
+    const cur = S.userPicked ? S.cands[S.sel] : top[0]; let list = top; // follow the best match until you pick one yourself
+    if (cur && !list.includes(cur)) list = top.slice(0, 2).concat(cur); // keep the one you're looking at
+    list.forEach(c => { c.fromStart = S.start && c.place && c.place !== "Near your start" ? haversine([S.start.lat, S.start.lon], c.ll[0]) : null; });
+    const was = S.cands[S.sel];
+    S.cands = list; renderCands(); S.sel = Math.max(0, list.indexOf(cur));
+    if (cur !== was) select(S.sel); else document.querySelectorAll(".cand").forEach((b, j) => b.classList.toggle("on", j === S.sel));
+    $("areaNote").textContent = note;
+  }
+  for (const c of fresh) if (c.match >= HIT && !R.announced.has(c.place)) { R.announced.add(c.place); toast(`${c.match}% match found in ${c.place}`); }
+}
 
-async function evalPlace(pl, opts, onProgress = () => {}) {
+async function evalPlace(pl, opts, onProgress = () => {}, server = 0) {
   const proj = projector(pl.lat, pl.lon), half = 3000;
   const sw = proj.ll(-half, -half), ne = proj.ll(half, half);
   onProgress(0.02, 0.6);
-  const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]], HW_LIGHT), proj, opts.allowTrails);
+  const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]], HW_LIGHT, server), proj, opts.allowTrails);
   if (G.grid.size < 40) return []; // water, fields or mountains with no paths
   onProgress(0.62, 0.75); await tick();
   const c = searchPlacements(G, opts.unit, { sizes: opts.sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
@@ -935,7 +1192,7 @@ function renderCands() {
     const label = c.place || (S.cands.length === 1 ? "Route" : ["Compact", "Medium", "Large"][Math.round(i * 2 / Math.max(1, S.cands.length - 1))]);
     const t = document.createElement("b"); t.textContent = label;
     const s = document.createElement("span"); s.textContent = `${(c.dist / 1000).toFixed(1)} km · ${c.match}% match`;
-    b.append(t, s); b.onclick = () => select(i); box.appendChild(b);
+    b.append(t, s); b.onclick = () => { S.userPicked = true; select(i); }; box.appendChild(b);
   });
 }
 async function select(i) {

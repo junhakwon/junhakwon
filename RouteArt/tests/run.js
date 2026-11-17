@@ -84,6 +84,13 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after, whe
   await page.fill("#maxKm", String(maxKm));
   await page.check(`input[name=mtn][value=${mountains ? "yes" : "no"}]`);
   await page.click("#goBtn");
+  let liveWhileSearching = null;
+  if (where) {
+    await page.waitForFunction(() => !document.getElementById("results").hidden || document.getElementById("goStatus").classList.contains("err"), null, { timeout: 120000 });
+    liveWhileSearching = await page.evaluate(() => ({ busy: !!document.getElementById("goStatus").dataset.busy, mini: document.getElementById("prog").classList.contains("mini"),
+      stop: !document.getElementById("progStop").hidden, toast: document.getElementById("toast").textContent }));
+    if (process.env.SHOTS) await page.screenshot({ path: path.join(process.env.SHOTS, "live.png") });
+  }
   if (process.env.SHOTS && where) { await page.waitForTimeout(2500); await page.screenshot({ path: path.join(process.env.SHOTS, "progress.png") }); }
   await page.waitForFunction(() => { const g = document.getElementById("goStatus"); return !g.dataset.busy && (/^Done/.test(g.textContent) || g.classList.contains("err")); }, null, { timeout: 120000 })
     .catch(async err => { throw new Error(`${name}: no result. Status: ${await page.textContent("#goStatus")} ${errors.join("; ")}`); });
@@ -94,6 +101,7 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after, whe
     options: [...document.querySelectorAll(".cand")].map(b => b.textContent),
     km: parseFloat(sDist.textContent), trailKm: parseFloat(sTrail.textContent), match: parseInt(sMatch.textContent),
   }));
+  out.live = liveWhileSearching;
   if (after) out.after = await after(page, context);
   await context.close();
   return { name, errors, ...out };
@@ -106,11 +114,19 @@ async function followAndSave(page, context) {
   const pt = await page.evaluate(() => { const ll = S.cands[S.sel].ll; return ll[Math.floor(ll.length * 0.3)]; });
   await context.setGeolocation({ latitude: pt[0], longitude: pt[1], accuracy: 8 });
   await page.click("#followBtn");
-  await page.waitForFunction(() => document.getElementById("fState").textContent === "On route", null, { timeout: 10000 });
+  await page.waitForFunction(() => document.getElementById("fState").textContent === "On route", null, { timeout: 10000 })
+    .catch(async e => { throw new Error("follow: " + await page.textContent("#fState") + " / follow hidden=" + await page.evaluate(() => document.getElementById("follow").hidden)); });
   res.done = parseFloat(await page.textContent("#fDone"));
   if (shots) { await page.waitForTimeout(300); await page.screenshot({ path: path.join(shots, "follow.png") }); }
   res.left = parseFloat(await page.textContent("#fLeft"));
-  await context.setGeolocation({ latitude: pt[0], longitude: pt[1] + 300 / 88000, accuracy: 8 }); // ~300 m east
+  const off = await page.evaluate(([la, lo]) => { // a point at least 250 m from every part of the route
+    const ll = S.cands[S.sel].ll;
+    for (let d = 300; d < 3000; d += 100) for (let a = 0; a < 360; a += 30) {
+      const p = [la + d * Math.sin(a * Math.PI / 180) / 111320, lo + d * Math.cos(a * Math.PI / 180) / 88000];
+      if (ll.every(q => haversine(p, q) > 250)) return p;
+    }
+  }, pt);
+  await context.setGeolocation({ latitude: off[0], longitude: off[1], accuracy: 8 });
   await page.waitForFunction(() => document.getElementById("fState").textContent.startsWith("Off route"), null, { timeout: 10000 });
   res.offRoute = true;
   const dl = page.waitForEvent("download");
@@ -138,6 +154,49 @@ const SCREENSHOT = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="
 <rect x="95" y="300" width="110" height="170" rx="20"/><ellipse cx="150" cy="260" rx="100" ry="80"/></g>
 <circle cx="115" cy="255" r="8" fill="black"/><circle cx="185" cy="255" r="8" fill="black"/>
 <rect x="0" y="590" width="300" height="60" fill="black"/></svg>`;
+
+// A "photo": uneven light (bright left, dark right), colour noise, and a shaded red
+// object 1.5× wider than tall. A plain dark/light split would cut the picture in half.
+const PHOTO = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300">
+<defs><linearGradient id="l" x1="0" x2="1"><stop offset="0" stop-color="#f4efe4"/><stop offset="1" stop-color="#5d574c"/></linearGradient>
+<radialGradient id="o" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#e2553f"/><stop offset="1" stop-color="#6e1a10"/></radialGradient>
+<filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="3"/><feColorMatrix values="1 0 0 0 0 0 1 0 0 0 0 0 1 0 0 0 0 0 .35 0"/></filter></defs>
+<rect width="400" height="300" fill="url(#l)"/><ellipse cx="215" cy="175" rx="95" ry="22" fill="#000" opacity=".18"/>
+<ellipse cx="200" cy="150" rx="90" ry="60" fill="url(#o)"/><rect width="400" height="300" filter="url(#n)"/></svg>`;
+
+async function photoAndPaintCheck(browser) {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await page.route("**/*", r => {
+    const u = r.request().url();
+    if (u.includes("leaflet.min.js")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.js")), contentType: "text/javascript" });
+    return u.startsWith(PAGE) ? r.continue() : r.fulfill({ status: 404, body: "" });
+  });
+  await page.goto(PAGE);
+  const box = () => page.evaluate(() => {
+    let a = [1e9, 1e9, -1e9, -1e9];
+    for (const [x, y] of S.contour) a = [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)];
+    return { aspect: (a[2] - a[0]) / (a[3] - a[1]), wFrac: (a[2] - a[0]) / S.pix.W };
+  });
+  await page.setInputFiles("#file", { name: "photo.svg", mimeType: "image/svg+xml", buffer: Buffer.from(PHOTO) });
+  await page.waitForTimeout(600);
+  const res = { mode: await page.getAttribute('[data-mode="photo"]', "aria-pressed"), photo: await box() };
+  // paint: clear everything, then paint a tall bar down the middle of the picture
+  await page.click("#paintBtn");
+  await page.click("#ptClear");
+  await page.fill("#ptSize", "12"); await page.dispatchEvent("#ptSize", "input");
+  const r = await (await page.$("#ptCanvas")).boundingBox();
+  const x0 = r.x + r.width * 0.45, x1 = r.x + r.width * 0.55;
+  await page.mouse.move(x0, r.y + r.height * 0.1); await page.mouse.down();
+  for (let i = 0; i <= 20; i++) { const y = r.y + r.height * (0.1 + 0.8 * i / 20); await page.mouse.move(i % 2 ? x1 : x0, y); }
+  await page.mouse.up();
+  if (process.env.SHOTS) await page.screenshot({ path: path.join(process.env.SHOTS, "painter.png") });
+  await page.click("#ptDone");
+  await page.waitForTimeout(200);
+  res.paint = await box(); res.paintNote = await page.textContent("#shapeNote");
+  if (process.env.SHOTS) await (await page.$(".drop")).screenshot({ path: path.join(process.env.SHOTS, "painted.png") });
+  await page.close();
+  return res;
+}
 
 async function traceCheck(browser) {
   const page = await browser.newPage();
@@ -207,15 +266,21 @@ async function installCheck(browser) {
   ok(e.status.startsWith("Done"), `${e.name}: finished (${e.status})`);
   ok(e.note.includes("Seoul") && e.options.some(o => PLACES.some(([n]) => o.includes(n))), `${e.name}: options are named places in Seoul`);
   ok(e.match >= 70, `${e.name}: shape match ${e.match}% >= 70%`);
+  ok(e.live && e.live.busy && e.live.mini && e.live.stop, `${e.name}: first results appear while the search keeps going, with a Stop button`);
+  ok(e.live && /match found in/.test(e.live.toast), `${e.name}: a 90%+ match pops up straight away ("${e.live && e.live.toast}")`);
   const w = await scenario(browser, "Where: The World", { mountains: true, where: "The World", maxKm: 8 });
   ok(w.status.startsWith("Done") && w.note.includes("the world") && w.options.length, `${w.name}: found cities (${w.options.join(", ")})`);
   ok(d.status.startsWith("Done") && d.km <= 6, `${d.name}: respects a 6 km limit (${d.km} km)`);
   const f = a.after;
   ok(f.done > 0 && f.left > 0, `follow: progress shown (${f.done} km done, ${f.left} km to go)`);
-  ok(f.offRoute, "follow: warns when 300 m off the route");
+  ok(f.offRoute, "follow: warns when 250 m+ off the route");
   ok(/<trkpt lat=/.test(f.gpx) && f.gpx.includes("<gpx"), `share: GPX file produced (${f.gpxName})`);
   ok(f.savedBefore === 1 && f.savedAfterReload === 1, "my routes: route saved and still there after reopening");
   ok(f.armed.includes("again") && f.savedAfterDelete === 0, "my routes: delete asks for a second tap, then removes it");
+  const pp = await photoAndPaintCheck(browser);
+  ok(pp.mode === "true", "photo: a photo switches to Photo mode by itself");
+  ok(pp.photo.aspect > 1.2 && pp.photo.aspect < 1.9 && pp.photo.wFrac < 0.8, `photo: finds the object despite uneven light (aspect ${pp.photo.aspect.toFixed(2)}, width ${Math.round(pp.photo.wFrac * 100)}% of picture)`);
+  ok(pp.paint.aspect < 0.5 && /painted/.test(pp.paintNote), `paint: the painted tall bar becomes the shape (aspect ${pp.paint.aspect.toFixed(2)})`);
   const tr = await traceCheck(browser);
   ok(tr.aspect > 0.45 && tr.aspect < 1.2, `trace: screenshot picks the character, not the bottom bar (aspect ${tr.aspect.toFixed(2)})`);
   const i = await installCheck(browser);
