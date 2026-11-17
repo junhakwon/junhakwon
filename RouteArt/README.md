@@ -52,7 +52,7 @@ The app asks every time. It never saves or pre-fills a start, so you can start f
    - If not, Otsu's method picks the light/dark split automatically.
    - If the border comes out mostly "shape", the picture is light-on-dark and gets flipped.
    - The **Swap shape and background** button flips it by hand.
-3. Keep only the largest connected blob, so specks and text are ignored.
+3. Close 1-pixel gaps, then pick the main subject among the blobs. Each blob is ranked by the area its outer outline encloses, not by its pixel count, because a line-art character is mostly background inside a thin outline. Blobs touching the image edge (phone status bars, black bottom bars, frames) count for only 5%. Specks and text are ignored.
 4. Walk around its outer edge (Moore-neighbour tracing), smooth the pixel staircase (Ramer–Douglas–Peucker), and resample to 400 evenly spaced points.
 5. Normalise to a shape with perimeter 1, centred on its middle. From here the shape is just a curve that can be scaled, rotated and moved.
 
@@ -76,18 +76,24 @@ Every combination of these is scored:
 Each placement is scored by the RMS distance from 72 points on the outline to the nearest walkable intersection, capped at 350 m (a spatial grid index makes this fast). Shapes over rivers, rail yards or parks with no paths score badly on their own, and no special water handling is needed. The best placement from each size group (small, medium, large) moves on.
 
 ### 6. Routing along the drawing
-The outline is cut into waypoints about every 110 m (between 40 and 240 of them). Each waypoint snaps to its nearest intersection, and the app runs A* between consecutive waypoints. The cost of a street segment is its length × (1 + distance from the drawn line ÷ 40 m), so the router hugs the drawing instead of taking shortcuts. Short out-and-back spurs under 160 m that snapping creates are removed afterwards. With **Start and finish at my start point** on, the route runs from the start to the nearest point of the drawing, around it, and back home.
+The outline is cut into waypoints about every 70 m (between 50 and 320 of them). Each waypoint snaps to its nearest intersection, and the app runs A* between consecutive waypoints. The cost of a street segment is its length × (1 + distance from the drawn line ÷ 25 m), so the router hugs the drawing instead of taking shortcuts. Short out-and-back spurs under 120 m that snapping creates are removed afterwards. With **Start and finish at my start point** on, the route runs from the start to the nearest point of the drawing, around it, and back home. Those legs are drawn as a faint dotted line and left out of the match score, so they don't muddy the picture.
 
-### 7. If it doesn't fit nearby
-If the best neighbourhood route matches the picture less than 55%:
-1. Ask Nominatim which city the start is in, for example 서울특별시, and get its bounding box.
-2. Lay a 5 km grid of candidate areas over the city and try the 5 nearest to the start, loading a 7 × 7 km street square for each.
-3. Stop early when one matches 75% or better.
+### 7. Where should the drawing go?
+A detailed picture only looks right where the streets happen to run in its shape, so the runner can choose how widely to search:
 
-These routes begin on the drawing itself. The app says how far away it is, and that distance isn't counted.
+| Where | What gets tried |
+|---|---|
+| *Near my start* (default) | A 6 × 6 km square around the start, with the start-and-finish loop. If nothing matches 60%, the app searches the rest of the start's city. |
+| A city or district ("Seoul", "마포구") | Its neighbourhoods (`place=suburb/quarter/neighbourhood` in OpenStreetMap), nearest first, then always the one farthest from those already tried, so the whole city is covered quickly |
+| A country ("South Korea") | Its cities and towns, biggest population first, at least 20 km apart |
+| "The World" | 32 dense, walkable cities with very different street patterns: grids (Manhattan, Barcelona, Chicago), diagonals (Washington, Buenos Aires), organic old towns (Tokyo, London, Seoul, Rome) |
+
+While a route is being made, a progress card in the middle of the screen shows 0–100% and the current step ("Checking 망원동 · 3 of 8"). The map servers don't report download progress, so each step moves the bar to a fixed point and it creeps forward while waiting, never going backwards.
+
+Places are checked 8 at a time, two in parallel (the public map servers allow two requests at once), showing the best match so far. **Check more places** continues through the list. Each place loads a 6 × 6 km square of streets without sidewalks and service roads, which keeps the download small. Results show the top 3 places, each named, with how far it is from the start point if one was set. No start point is needed for a place search.
 
 ### 8. Scoring and estimates
-- **Shape match %** is the average gap between the route and the drawing, measured both ways, compared with the drawing's size. 100% means the route lies exactly on the outline. Options under 40% are hidden.
+- **Shape match %** is the average gap between the drawing part of the route and the picture, measured both ways, compared with the drawing's size (100% minus 4% for every 1% of the radius it's off on average). 100% means the route lies exactly on the outline. Options under 40% are hidden.
 - **Climb** comes from Open-Meteo's elevation API, sampled every 100 m along the route.
 - **Time** uses the trail-running "effort distance" idea: 100 m of climbing counts as 1 extra km, and trail kilometres count 1.25×. Effort distance × your easy pace = estimated time.
 - **Options:** up to three clearly different lengths (Compact, Medium, Large), with the best match shown first.
@@ -99,7 +105,7 @@ The GPX file is a single track with one point per intersection, named after the 
 The phone's GPS position is projected onto the route to work out how far along you are. The search looks near your last position first, so a route that crosses itself (like the middle of a heart) doesn't jump ahead, and falls back to the whole route if you've moved far. Done is drawn grey, the rest blue. "Off route" triggers past the larger of 35 m and the GPS accuracy (capped at 80 m). Time left = distance left × the pace saved with the route.
 
 ### 11. Offline
-The service worker caches the app and the map library, so the app opens with no connection. Map tiles the app has shown are kept (up to ~4,000), and when a route is saved the tiles along it are fetched at zoom 14–16. Making a *new* route still needs a connection, because the street data comes live from OpenStreetMap.
+The service worker caches the app and the map library, so the app opens with no connection. Map tiles the app has shown are kept (up to ~4,000). OpenStreetMap's tile policy forbids bulk pre-downloading, so to have the map on a weak-signal run, open the route in Follow mode once beforehand and scroll along it. Making a *new* route still needs a connection, because the street data comes live from OpenStreetMap.
 
 ## Services used
 
@@ -108,7 +114,7 @@ The service worker caches the app and the map library, so the app opens with no 
 | Streets & trails | Overpass API (3 public mirrors, tried in turn) | Fair use; one query per area |
 | Address search, city lookup | Nominatim | Max 1 request/second, which a person tapping can't exceed |
 | Elevation | Open-Meteo | 100 points per request |
-| Map background | CARTO Voyager tiles (OpenStreetMap data) | Free for low-volume, non-commercial use |
+| Map background | OpenStreetMap standard tiles | Light use only and no bulk downloading, so only tiles you've viewed are kept offline |
 | Map library | Leaflet 1.9.4 from cdnjs | none |
 
 All are free and need no key. If the app ever gets lots of users, the public Overpass and Nominatim servers would need to be replaced with self-hosted or paid ones.
@@ -117,6 +123,7 @@ All are free and need no key. If the app ever gets lots of users, the public Ove
 
 `tests/run.js` drives the real page in headless Chromium. Every network service is replaced by a fake city: a street grid with a river crossed by a few bridges, a mountain that only has trails, and optionally a lake around the start. It checks:
 
+- a phone screenshot of a line-art character traces the character, not the black bar along the bottom
 - Follow mode shows progress, warns when 300 m off the route, and Share produces a valid GPX
 - My routes survives a reopen, and Delete needs a second tap
 - the service worker, manifest and icons install correctly, and iPhone Safari shows the Add to Home Screen tip
@@ -125,6 +132,9 @@ All are free and need no key. If the app ever gets lots of users, the public Ove
 - streets-only mode uses 0 km of trail
 - a lake around the start triggers the city-wide search, which still finds a ≥ 70% match
 - a 6 km limit is respected
+- "Seoul" with no start point checks named neighbourhoods and returns named options
+- "The World" checks cities around the world
+- the progress bar runs from 0% to 100% without going backwards, then closes
 - the Draw button stays off until the start, the picture and the mountain answer are all given
 - no script errors
 
@@ -141,7 +151,7 @@ The GitHub Action `.github/workflows/route-art.yml` runs this on every push that
 | 1 | App logic: tracing, fitting, routing, city fallback, mountain filter, time estimate, GPX | Claude | Done |
 | 2 | Automated tests with a fake city | Claude | Done, 15/15 pass |
 | 3 | CI that tests every push and publishes to GitHub Pages | Claude | Done |
-| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 22/22 checks pass |
+| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 32/32 checks pass |
 | 4 | Merge the branch into the default branch | You (GitHub app or website, tablet is fine) | To do |
 | 5 | Turn on Pages once: Settings → Pages → Source → **GitHub Actions**, then re-run the "Route Art" workflow | You (website) | To do |
 | 6 | Open `https://junhakwon.github.io/junhakwon/RouteArt/` in Safari on your iPhone, then Share → Add to Home Screen | You | To do |

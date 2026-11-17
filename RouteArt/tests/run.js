@@ -38,24 +38,33 @@ function fakeCity(bb, opts) { // bb = [south, west, north, east]
   return { elements: [...ways, ...nodes.values()] };
 }
 
+// neighborhoods the fake place search returns: [name, metres east, metres north]
+const PLACES = [["망원동", 6500, 0], ["성수동", -6500, 0], ["연남동", 0, 6500], ["사당동", 0, -6500], ["잠실동", 6000, 6000], ["목동", -6000, -6000]];
+
 const HEART = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="white"/>
 <path d="M150 260 C 40 180 10 120 40 75 C 70 30 130 40 150 90 C 170 40 230 30 260 75 C 290 120 260 180 150 260 Z" fill="black"/></svg>`;
 
-async function scenario(browser, name, { mountains, lake, maxKm = 20, after }) {
+async function scenario(browser, name, { mountains, lake, maxKm = 20, after, where, noStart }) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block", acceptDownloads: true });
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", e => errors.push(e.message));
-  await page.route("**/*", r => {
+  await page.route("**/*", async r => {
     const u = r.request().url();
     const json = body => r.fulfill({ body: JSON.stringify(body), contentType: "application/json" });
     if (u.includes("leaflet.min.js")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.js")), contentType: "text/javascript" });
     if (u.includes("leaflet.min.css")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.css")), contentType: "text/css" });
     if (u.includes("/interpreter")) {
       const q = decodeURIComponent(r.request().postData().slice(5));
+      await new Promise(res => setTimeout(res, +(process.env.SLOW || 400))); // real map data takes seconds; keeps the progress bar test meaningful on fast machines
+      if (q.includes("place~")) return json({ elements: PLACES.map(([name, dx, dy], i) => ({ type: "node", id: 9e6 + i, lat: LAT0 + dy / ky, lon: LON0 + dx / kx, tags: { place: "suburb", name } })) });
       return json(fakeCity(q.match(/\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\)/).slice(1).map(Number), { lake }));
     }
-    if (u.includes("nominatim") && u.includes("/search")) return json([{ lat: String(LAT0), lon: String(LON0) }]);
+    if (u.includes("nominatim") && u.includes("/search")) {
+      if (new URL(u).searchParams.get("q") === "Seoul")
+        return json([{ osm_type: "relation", osm_id: 2297418, name: "Seoul", lat: String(LAT0), lon: String(LON0), boundingbox: ["37.41", "37.70", "126.76", "127.18"] }]);
+      return json([{ lat: String(LAT0), lon: String(LON0) }]);
+    }
     if (u.includes("nominatim") && u.includes("/reverse")) return json({ address: { city: "서울특별시" }, boundingbox: ["37.41", "37.70", "126.76", "127.18"] });
     if (u.includes("open-meteo")) { const n = new URL(u).searchParams.get("latitude").split(",").length; return json({ elevation: Array.from({ length: n }, (_, i) => 30 + 10 * Math.sin(i / 5)) }); }
     if (u.startsWith(PAGE)) return r.continue();
@@ -63,18 +72,24 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after }) {
   });
   await page.goto(PAGE);
   if (!(await page.isDisabled("#goBtn"))) throw new Error("button should start disabled");
-  await page.fill("#addr", "서울시청");
-  await page.click("#findBtn");
-  await page.waitForFunction(() => document.getElementById("startStatus").textContent.startsWith("Start"));
+  if (!noStart) {
+    await page.fill("#addr", "서울시청");
+    await page.click("#findBtn");
+    await page.waitForFunction(() => document.getElementById("startStatus").textContent.startsWith("Start"));
+  }
+  if (where) await page.fill("#where", where);
   await page.setInputFiles("#file", { name: "heart.svg", mimeType: "image/svg+xml", buffer: Buffer.from(HEART) });
   await page.waitForTimeout(300);
   if (!(await page.isDisabled("#goBtn"))) throw new Error("button must wait for the mountain question");
   await page.fill("#maxKm", String(maxKm));
   await page.check(`input[name=mtn][value=${mountains ? "yes" : "no"}]`);
   await page.click("#goBtn");
-  await page.waitForFunction(() => !document.getElementById("goStatus").dataset.busy && /Done|Couldn|busy/.test(document.getElementById("goStatus").textContent), null, { timeout: 120000 });
+  if (process.env.SHOTS && where) { await page.waitForTimeout(2500); await page.screenshot({ path: path.join(process.env.SHOTS, "progress.png") }); }
+  await page.waitForFunction(() => { const g = document.getElementById("goStatus"); return !g.dataset.busy && (/^Done/.test(g.textContent) || g.classList.contains("err")); }, null, { timeout: 120000 })
+    .catch(async err => { throw new Error(`${name}: no result. Status: ${await page.textContent("#goStatus")} ${errors.join("; ")}`); });
   await page.waitForTimeout(500);
   const out = await page.evaluate(() => ({
+    progress: window.__routeArtProgress.slice(), overlayHidden: document.getElementById("prog").hidden,
     status: goStatus.textContent, note: areaNote.textContent,
     options: [...document.querySelectorAll(".cand")].map(b => b.textContent),
     km: parseFloat(sDist.textContent), trailKm: parseFloat(sTrail.textContent), match: parseInt(sMatch.textContent),
@@ -114,6 +129,35 @@ async function followAndSave(page, context) {
   return res;
 }
 
+// A phone screenshot of a line-art character: white background, a thin black outline,
+// status-bar text at the top and a solid black bar along the bottom edge.
+const SCREENSHOT = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="650"><rect width="300" height="650" fill="white"/>
+<rect x="20" y="12" width="40" height="8" fill="black"/><rect x="230" y="12" width="50" height="8" fill="black"/>
+<g stroke="black" stroke-width="5" fill="white" stroke-linejoin="round">
+<path d="M70 230 L80 150 L130 195 Z"/><path d="M230 230 L220 150 L170 195 Z"/>
+<rect x="95" y="300" width="110" height="170" rx="20"/><ellipse cx="150" cy="260" rx="100" ry="80"/></g>
+<circle cx="115" cy="255" r="8" fill="black"/><circle cx="185" cy="255" r="8" fill="black"/>
+<rect x="0" y="590" width="300" height="60" fill="black"/></svg>`;
+
+async function traceCheck(browser) {
+  const page = await browser.newPage();
+  await page.route("**/*", r => {
+    const u = r.request().url();
+    if (u.includes("leaflet.min.js")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.js")), contentType: "text/javascript" });
+    return u.startsWith(PAGE) ? r.continue() : r.fulfill({ status: 404, body: "" });
+  });
+  await page.goto(PAGE);
+  await page.setInputFiles("#file", { name: "screenshot.svg", mimeType: "image/svg+xml", buffer: Buffer.from(SCREENSHOT) });
+  await page.waitForTimeout(400);
+  const box = await page.evaluate(() => {
+    let a = [1e9, 1e9, -1e9, -1e9];
+    for (const [x, y] of S.contour) { a = [Math.min(a[0], x), Math.min(a[1], y), Math.max(a[2], x), Math.max(a[3], y)]; }
+    return { aspect: (a[2] - a[0]) / (a[3] - a[1]) };
+  });
+  await page.close();
+  return box;
+}
+
 async function installCheck(browser) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 },
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
@@ -150,15 +194,21 @@ async function installCheck(browser) {
   ok(a.status.startsWith("Done"), `${a.name}: finished (${a.status})`);
   ok(a.match >= 70, `${a.name}: shape match ${a.match}% >= 70%`);
   ok(a.km > 2 && a.km <= 20, `${a.name}: distance ${a.km} km within 20 km`);
-  ok(a.note.includes("neighborhood"), `${a.name}: stayed in the neighborhood`);
+  ok(a.note.includes("around your start"), `${a.name}: stayed near the start point`);
   const b = await scenario(browser, "neighborhood, streets only", { mountains: false });
   ok(b.status.startsWith("Done"), `${b.name}: finished`);
   ok(b.trailKm === 0, `${b.name}: no trail used (${b.trailKm} km)`);
   const c = await scenario(browser, "lake around start, city fallback", { mountains: true, lake: true });
   ok(c.status.startsWith("Done"), `${c.name}: finished`);
-  ok(c.note.includes("서울특별시"), `${c.name}: moved elsewhere in the city`);
+  ok(c.note.includes("서울특별시") && c.options.some(o => PLACES.some(([n]) => o.includes(n))), `${c.name}: searched other places in the city`);
   ok(c.match >= 70, `${c.name}: shape match ${c.match}% >= 70%`);
   const d = await scenario(browser, "short limit", { mountains: true, maxKm: 6 });
+  const e = await scenario(browser, "Where: Seoul, no start point", { mountains: false, where: "Seoul", noStart: true });
+  ok(e.status.startsWith("Done"), `${e.name}: finished (${e.status})`);
+  ok(e.note.includes("Seoul") && e.options.some(o => PLACES.some(([n]) => o.includes(n))), `${e.name}: options are named places in Seoul`);
+  ok(e.match >= 70, `${e.name}: shape match ${e.match}% >= 70%`);
+  const w = await scenario(browser, "Where: The World", { mountains: true, where: "The World", maxKm: 8 });
+  ok(w.status.startsWith("Done") && w.note.includes("the world") && w.options.length, `${w.name}: found cities (${w.options.join(", ")})`);
   ok(d.status.startsWith("Done") && d.km <= 6, `${d.name}: respects a 6 km limit (${d.km} km)`);
   const f = a.after;
   ok(f.done > 0 && f.left > 0, `follow: progress shown (${f.done} km done, ${f.left} km to go)`);
@@ -166,13 +216,20 @@ async function installCheck(browser) {
   ok(/<trkpt lat=/.test(f.gpx) && f.gpx.includes("<gpx"), `share: GPX file produced (${f.gpxName})`);
   ok(f.savedBefore === 1 && f.savedAfterReload === 1, "my routes: route saved and still there after reopening");
   ok(f.armed.includes("again") && f.savedAfterDelete === 0, "my routes: delete asks for a second tap, then removes it");
+  const tr = await traceCheck(browser);
+  ok(tr.aspect > 0.45 && tr.aspect < 1.2, `trace: screenshot picks the character, not the bottom bar (aspect ${tr.aspect.toFixed(2)})`);
   const i = await installCheck(browser);
   ok(i.sw, "install: offline service worker active");
   ok(i.display === "standalone" && i.icons && i.touchIcon, "install: manifest and home-screen icons in place");
   ok(i.tip, "install: iPhone Safari shows the Add to Home Screen tip");
-  for (const s of [a, b, c, d]) ok(!s.errors.length, `${s.name}: no script errors ${s.errors.join("; ")}`);
+  for (const s of [a, c, e]) {
+    const p = s.progress, rising = p.every((v, i) => !i || v >= p[i - 1]);
+    ok(p[0] === 0 && p[p.length - 1] === 100 && rising && p.length >= 3 && s.overlayHidden,
+      `${s.name}: progress bar ran 0% → 100% without going back (${p.length} steps), then closed`);
+  }
+  for (const s of [a, b, c, d, e, w]) ok(!s.errors.length, `${s.name}: no script errors ${s.errors.join("; ")}`);
   await browser.close(); server.close();
   for (const [pass, msg] of checks) console.log(pass ? "PASS" : "FAIL", msg);
-  for (const s of [a, b, c, d]) console.log(`  ${s.name}: ${s.options.join(" | ")}`);
+  for (const s of [a, b, c, d, e]) console.log(`  ${s.name}: ${s.options.join(" | ")}`);
   process.exit(checks.every(c => c[0]) ? 0 : 1);
 })().catch(e => { console.error(e); process.exit(1); });
