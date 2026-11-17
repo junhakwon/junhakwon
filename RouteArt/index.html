@@ -113,6 +113,10 @@ button.danger { color: var(--ghost); }
 .fbtns button { flex: 1; justify-content: center; }
 .me { width: 18px; height: 18px; border-radius: 50%; background: #1a73ff; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(26,115,255,.35); }
 body.following { overflow: hidden; }
+.animals { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.animals button { flex-direction: column; gap: 4px; padding: 8px 4px; font-size: 12px; justify-content: center; }
+.animals button[aria-pressed="true"] { border-color: var(--route); background: color-mix(in srgb, var(--route) 10%, transparent); }
+.animals canvas { width: 100%; max-width: 64px; aspect-ratio: 1; }
 .chip[aria-pressed="true"] { background: var(--route); border-color: var(--route); color: #fff; }
 #painter { position: fixed; inset: 0; z-index: 1600; background: var(--bg); display: flex; flex-direction: column; }
 .ptStage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 12px; }
@@ -165,6 +169,8 @@ body.following { overflow: hidden; }
   <section class="step" aria-labelledby="h2s">
     <h2 id="h2s"><span class="num">2</span>Choose a picture</h2>
     <input type="file" id="file" accept="image/*">
+    <p class="hint" style="margin:0">Or pick an animal:</p>
+    <div class="animals" id="animals" role="group" aria-label="Animal shapes"></div>
     <div class="row" role="group" aria-label="Picture type">
       <span class="hint">Picture type</span>
       <button type="button" class="chip" data-mode="drawing" aria-pressed="false">Drawing</button>
@@ -208,7 +214,11 @@ body.following { overflow: hidden; }
         <label class="choice"><input type="radio" name="mtn" value="no"><span>No, streets only<small>Stay on roads, sidewalks and paved paths.</small></span></label>
       </div>
     </fieldset>
-    <button class="primary" id="goBtn" type="button" disabled>Draw my route</button>
+    <div class="row">
+      <button class="primary" id="goBtn" type="button" disabled>Draw my route</button>
+      <button id="animalBtn" type="button" disabled>Which animals fit here?</button>
+    </div>
+    <p class="hint" style="margin:0">Which animals fit here? tries all 8 animal shapes around your start point (or the place under Where) and ranks them. No picture needed.</p>
     <p class="status" id="goStatus">Set a start point, choose a picture and answer the mountain question.</p>
   </section>
 
@@ -609,6 +619,76 @@ function traceImage(img, invert) { // kept for the tests: drawing pipeline end t
   const pts = contourFromMask(px.m, px.W, px.H); return pts ? { pts } : null;
 }
 
+// ---------- animal shapes ----------
+// Hand-drawn silhouettes on a 100×100 grid (y down). Every feature (ears, tails, legs,
+// trunk) is at least ~8% of the drawing wide, so it still shows on a street grid.
+const ANIMALS = [
+  ["Cat", [[32,96],[30,78],[33,62],[29,54],[27,42],[27,28],[29,8],[41,21],[53,21],[65,8],[67,28],[67,42],[64,54],[68,62],[71,78],[72,89],[79,90],[84,84],[84,72],[80,62],[87,58],[93,68],[93,88],[86,96]]],
+  ["Dog", [[5,38],[18,30],[22,16],[30,14],[34,30],[42,40],[78,40],[86,24],[94,28],[87,46],[87,88],[76,88],[74,62],[46,62],[44,88],[33,88],[32,58],[24,50],[7,49]]],
+  ["Rabbit", [[18,95],[13,84],[4,78],[7,66],[16,64],[22,54],[34,46],[44,42],[35,10],[46,4],[53,36],[57,6],[69,8],[64,40],[74,45],[86,57],[79,67],[66,67],[66,80],[75,88],[73,95]]],
+  ["Bird", [[6,72],[28,54],[38,40],[54,28],[68,22],[80,28],[96,34],[82,40],[78,50],[74,66],[62,76],[56,86],[60,94],[48,94],[48,78],[34,76],[14,82]]],
+  ["Fish", [[5,26],[24,44],[38,30],[48,14],[56,22],[64,22],[82,30],[96,50],[82,70],[62,78],[50,86],[44,74],[38,70],[24,56],[5,74],[14,50]]],
+  ["Whale", [[4,58],[10,44],[28,32],[58,34],[76,44],[84,40],[96,22],[100,30],[92,46],[100,62],[95,70],[83,57],[74,62],[52,72],[42,74],[36,88],[28,88],[30,74],[14,70]]],
+  ["Turtle", [[44,22],[45,8],[55,8],[56,22],[66,27],[80,16],[87,24],[77,38],[79,55],[77,70],[88,82],[80,90],[66,82],[56,86],[52,97],[48,97],[44,86],[34,82],[20,90],[12,82],[23,70],[21,55],[23,38],[13,24],[20,16],[34,27]]],
+  ["Elephant", [[6,92],[5,70],[10,48],[18,34],[32,24],[46,26],[56,32],[80,32],[92,44],[94,56],[99,66],[92,64],[90,94],[78,94],[76,76],[50,76],[50,94],[38,94],[36,66],[28,58],[22,66],[18,92]]],
+].map(([name, pts]) => ({ name, pts }));
+function animalContour(a) { return resampleClosed(a.pts.map(([x, y]) => [x, -y]), 400); }
+function animalImage(a, size) { // the silhouette as a picture, so it goes through the same steps as an upload
+  const c = document.createElement("canvas"); c.width = c.height = size; const g = c.getContext("2d"), k = size / 104;
+  g.fillStyle = "#fff"; g.fillRect(0, 0, size, size); g.fillStyle = "#111"; g.beginPath();
+  a.pts.forEach(([x, y], i) => i ? g.lineTo((x + 2) * k, (y + 2) * k) : g.moveTo((x + 2) * k, (y + 2) * k)); g.closePath(); g.fill();
+  return c;
+}
+(function animalGallery() {
+  const box = $("animals"), css = getComputedStyle(document.documentElement);
+  for (const a of ANIMALS) {
+    const b = document.createElement("button"); b.type = "button"; b.setAttribute("aria-pressed", "false"); b.dataset.animal = a.name;
+    const c = document.createElement("canvas"); c.width = c.height = 128; const g = c.getContext("2d"), k = 128 / 104;
+    g.fillStyle = css.getPropertyValue("--route").trim(); g.globalAlpha = .18; g.beginPath();
+    a.pts.forEach(([x, y], i) => i ? g.lineTo((x + 2) * k, (y + 2) * k) : g.moveTo((x + 2) * k, (y + 2) * k)); g.closePath(); g.fill();
+    g.globalAlpha = 1; g.strokeStyle = css.getPropertyValue("--route").trim(); g.lineWidth = 5; g.lineJoin = "round"; g.stroke();
+    const t = document.createElement("span"); t.textContent = a.name;
+    b.append(c, t); b.onclick = () => pickAnimal(a); box.appendChild(b);
+  }
+})();
+function pickAnimal(a) {
+  document.querySelectorAll("[data-animal]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.animal === a.name)));
+  $("file").value = "";
+  S.img = animalImage(a, 300); S.imgName = a.name; S.invert = false; S.work = workImage(S.img);
+  setMode("drawing");
+}
+
+// "Which animals fit here?": one download, all 8 animals tried on the same streets.
+$("animalBtn").onclick = () => { progressOpen("Finding animals that fit");
+  recommendAnimals().then(() => progressClose(true), e => { progressClose(false); status(e.message || String(e), true); console.error(e); })
+    .finally(() => { delete $("goStatus").dataset.busy; updateGo(); }); };
+async function recommendAnimals() {
+  $("goStatus").dataset.busy = "1"; $("goBtn").disabled = $("animalBtn").disabled = true; $("moreBtn").hidden = true;
+  const base = settings(true), where = whereValue();
+  S.region = null; S.userPicked = false;
+  let center, label, loop = false, hw = HIGHWAYS;
+  if (where) {
+    progressTo(2, `Looking up ${where}…`, 6);
+    const reg = await resolveRegion(where);
+    if (reg.world) throw new Error("The World is too big for this. Set a start point, or type a city or neighbourhood under Where.");
+    center = { lat: reg.lat, lon: reg.lon }; label = reg.name; hw = HW_LIGHT;
+  } else { center = S.start; label = "your start point"; loop = $("loopHome").checked; }
+  const proj = projector(center.lat, center.lon), half = 3000, sw = proj.ll(-half, -half), ne = proj.ll(half, half);
+  status(`Loading streets around ${label}…`); progressTo(7, `Loading streets around ${label}…`, 38); await tick();
+  const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]], hw, 0, base.allowTrails), proj, base.allowTrails);
+  const sizes = base.sizes.slice(-4), found = [];
+  for (const [i, a] of ANIMALS.entries()) {
+    status(`Trying the ${a.name.toLowerCase()}…`); progressTo(40 + 58 * i / ANIMALS.length, `Trying the ${a.name.toLowerCase()} · ${i + 1} of ${ANIMALS.length}`, 40 + 58 * (i + 1) / ANIMALS.length); await tick();
+    const unit = normShape(animalContour(a));
+    const c = searchPlacements(G, unit, { sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150], reach: P => P / (2 * Math.PI) * 0.8 + 250 });
+    const r = await routeCandidates(G, pickDiverse(c, 1).slice(0, 1), unit, [0, 0], loop, base.maxM, proj);
+    if (r[0]) found.push({ ...r[0], label: a.name, animal: a.name });
+  }
+  found.sort((a, b) => b.match - a.match);
+  if (!found.length) throw new Error("None of the animals fit within the distance limit here. Try a larger max distance.");
+  showResults(found.slice(0, 4), `Animals ranked by how well they fit around ${label}. Tap one to see its route.`);
+}
+
 // ---------- paint the shape ----------
 const PT = { brush: 7, erase: false, undo: [], drawing: false, last: null };
 $("paintBtn").onclick = openPainter;
@@ -716,19 +796,83 @@ function place(unit, P, rot, cx, cy) {
 }
 
 // ---------- street graph ----------
+const cooling = new Map(); // server → time it may be used again after an error
 async function overpassQL(q, pref = 0) { // pref: which server to try first, so parallel searches spread out
   let lastErr;
-  for (const url of OVERPASS.slice(pref % OVERPASS.length).concat(OVERPASS.slice(0, pref % OVERPASS.length))) {
+  const order = OVERPASS.slice(pref % OVERPASS.length).concat(OVERPASS.slice(0, pref % OVERPASS.length));
+  const ready = order.filter(u => !(cooling.get(u) > Date.now()));
+  for (const url of ready.length ? ready : order) {
     try {
       const r = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" } });
       if (!r.ok) throw new Error("HTTP " + r.status);
       return await r.json();
-    } catch (e) { lastErr = e; }
+    } catch (e) { lastErr = e; cooling.set(url, Date.now() + 60000); } // skip a busy server for a minute
   }
   throw new Error("Map data servers are busy (" + (lastErr && lastErr.message) + "). Try again in a minute.");
 }
-function overpass(bb, hw = HIGHWAYS, pref = 0) { // bb = [s, w, n, e]
-  return overpassQL(`[out:json][timeout:120];way["highway"~"^(${hw})$"]["area"!="yes"](${bb.map(v => v.toFixed(5)).join(",")})->.w;.w out qt;node(w.w);out skel qt;`, pref);
+// Street data, as small as possible: only the lines and which of three kinds each is
+// (ordinary street, big road without a mapped sidewalk, trail), with no names or other
+// tags. Trails aren't downloaded at all when the runner said no to mountains.
+const UNPAVED_LIST = "unpaved|dirt|ground|earth|grass|gravel|fine_gravel|rock|rocks|sand|mud|wood|woodchips|pebblestone|compacted";
+function streetQuery(bb, hw, trails) {
+  const B = bb.map(v => v.toFixed(5)).join(",");
+  return `[out:json][timeout:90];way["highway"~"^(${hw})$"]["area"!="yes"]["foot"!~"^(no|private)$"]["access"!~"^(no|private)$"](${B})->.all;` +
+    `(way.all["sac_scale"];way.all["trail_visibility"];way.all["mtb_scale"];way.all["highway"~"^(path|track|bridleway)$"][!"surface"];` +
+    `way.all["highway"~"^(path|track|footway|bridleway|steps)$"]["surface"~"^(${UNPAVED_LIST})$"];)->.t;` +
+    `way.all["highway"~"^(primary|primary_link|secondary|secondary_link)$"]["sidewalk"!~"^(both|separate)$"]->.big;` +
+    `(.all; - .t;)->.a1;(.a1; - .big;)->.r;(.big; - .t;)->.b;` +
+    `.r out skel qt;.r out count;.b out skel qt;.b out count;` +
+    (trails ? `.t out skel qt;.t out count;(.r;.b;.t;)->.k;` : `(.r;.b;)->.k;`) + `node(w.k);out skel qt;`;
+}
+function unslim(data) { // ways arrive as plain lists between count markers: streets, big roads, trails
+  const els = data.elements || []; if (!els.some(e => e.type === "count")) return data;
+  const KINDS = [{ highway: "residential" }, { highway: "primary" }, { highway: "path", sac_scale: "yes" }];
+  let g = 0; for (const e of els) { if (e.type === "count") g++; else if (e.type === "way") e.tags = KINDS[Math.min(g, 2)]; }
+  return data;
+}
+async function overpass(bb, hw = HIGHWAYS, pref = 0, trails = true) { // bb = [s, w, n, e]
+  const key = `${hw === HIGHWAYS ? "F" : "L"}${trails ? 1 : 0}|${bb.map(v => v.toFixed(4)).join(",")}`;
+  const hit = await cacheGet(key); if (hit) return hit;
+  const data = unslim(await overpassQL(streetQuery(bb, hw, trails), pref));
+  cachePut(key, data);
+  return data;
+}
+
+// ---------- remembered areas (this phone only) ----------
+// Street data for areas already searched is kept for 30 days, so searching the same
+// city or "The World" again doesn't download it again. At most 60 areas are kept.
+let dbP = null;
+function idb() {
+  if (!dbP) dbP = new Promise((res, rej) => {
+    const r = indexedDB.open("route-art", 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore("areas"); r.result.createObjectStore("meta"); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  }).catch(() => null);
+  return dbP;
+}
+function idbReq(db, store, mode, fn) {
+  return new Promise(res => { try { const q = fn(db.transaction(store, mode).objectStore(store)); q.onsuccess = () => res(q.result); q.onerror = () => res(null); } catch (e) { res(null); } });
+}
+async function cacheGet(key) {
+  try {
+    const db = await idb(); if (!db) return null;
+    const t = await idbReq(db, "meta", "readonly", st => st.get(key));
+    if (!t || Date.now() - t > 30 * 864e5) return null;
+    return await idbReq(db, "areas", "readonly", st => st.get(key));
+  } catch (e) { return null; }
+}
+async function cachePut(key, data) {
+  try {
+    const db = await idb(); if (!db) return;
+    await idbReq(db, "areas", "readwrite", st => st.put(data, key));
+    await idbReq(db, "meta", "readwrite", st => st.put(Date.now(), key));
+    const keys = await idbReq(db, "meta", "readonly", st => st.getAllKeys()) || [];
+    if (keys.length > 60) {
+      const times = await idbReq(db, "meta", "readonly", st => st.getAll()) || [];
+      const old = keys.map((k, i) => [k, times[i]]).sort((a, b) => a[1] - b[1]).slice(0, keys.length - 60);
+      for (const [k] of old) { await idbReq(db, "areas", "readwrite", st => st.delete(k)); await idbReq(db, "meta", "readwrite", st => st.delete(k)); }
+    }
+  } catch (e) { /* storage full or blocked: just don't remember */ }
 }
 function isTrail(t) {
   const hw = t.highway, sf = t.surface || "";
@@ -766,7 +910,30 @@ function buildGraph(data, proj, allowTrails) {
   const keep = new Uint8Array(n); for (let i = 0; i < n; i++) keep[i] = comp[i] === best ? 1 : 0;
   const G = { X, Y, adj, keep, n, cell: 60, grid: new Map() };
   for (let i = 0; i < n; i++) if (keep[i]) { const k = cellKey(G, X[i], Y[i]); let a = G.grid.get(k); if (!a) G.grid.set(k, a = []); a.push(i); }
+  G.df = distanceField(G);
   return G;
+}
+// Distance from every 25 m cell to the nearest street, worked out once per area, so
+// scoring thousands of placements is a lookup per point instead of a search.
+function distanceField(G) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < G.n; i++) if (G.keep[i]) { x0 = Math.min(x0, G.X[i]); y0 = Math.min(y0, G.Y[i]); x1 = Math.max(x1, G.X[i]); y1 = Math.max(y1, G.Y[i]); }
+  if (!isFinite(x0)) return null;
+  const cs = 25, W = Math.ceil((x1 - x0) / cs) + 3, H = Math.ceil((y1 - y0) / cs) + 3, d = new Float32Array(W * H).fill(1e6);
+  x0 -= cs; y0 -= cs;
+  for (let u = 0; u < G.n; u++) if (G.keep[u]) {
+    const A = G.adj[u];
+    for (let j = 0; j < A.length; j += 4) { const v = A[j]; if (v < u) continue;
+      const steps = Math.max(1, Math.ceil(A[j + 1] / (cs * 0.5)));
+      for (let k = 0; k <= steps; k++) { const x = G.X[u] + (G.X[v] - G.X[u]) * k / steps, y = G.Y[u] + (G.Y[v] - G.Y[u]) * k / steps;
+        d[Math.floor((y - y0) / cs) * W + Math.floor((x - x0) / cs)] = 0; } }
+  }
+  const D = cs * Math.SQRT2;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; let v = d[i];
+    if (x > 0) v = Math.min(v, d[i - 1] + cs); if (y > 0) { v = Math.min(v, d[i - W] + cs); if (x > 0) v = Math.min(v, d[i - W - 1] + D); if (x < W - 1) v = Math.min(v, d[i - W + 1] + D); } d[i] = v; }
+  for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) { const i = y * W + x; let v = d[i];
+    if (x < W - 1) v = Math.min(v, d[i + 1] + cs); if (y < H - 1) { v = Math.min(v, d[i + W] + cs); if (x < W - 1) v = Math.min(v, d[i + W + 1] + D); if (x > 0) v = Math.min(v, d[i + W - 1] + D); } d[i] = v; }
+  return { x0, y0, cs, W, H, d };
 }
 function cellKey(G, x, y) { return Math.floor(x / G.cell) * 100003 + Math.floor(y / G.cell); }
 function nearest(G, x, y, maxR) {
@@ -785,7 +952,14 @@ function nearest(G, x, y, maxR) {
 
 // ---------- fitting ----------
 function fitError(G, pts) { // RMS distance from shape points to the street network, capped
-  let s = 0; for (const [x, y] of pts) { const d = nearest(G, x, y, 350).d; s += d * d; } return Math.sqrt(s / pts.length);
+  const f = G.df; if (!f) return 350;
+  let s = 0;
+  for (const [x, y] of pts) {
+    const i = Math.floor((x - f.x0) / f.cs), j = Math.floor((y - f.y0) / f.cs);
+    const dd = i < 0 || j < 0 || i >= f.W || j >= f.H ? 350 : Math.min(350, f.d[j * f.W + i] + f.cs * 0.35);
+    s += dd * dd;
+  }
+  return Math.sqrt(s / pts.length);
 }
 function searchPlacements(G, unit, opt) {
   const samples = resampleClosed(unit, 72);
@@ -956,14 +1130,16 @@ function updateGo() {
   const ready = (S.start || where) && S.contour && mtn;
   $("loopRow").hidden = !!where;
   $("goBtn").disabled = !ready || !!$("goStatus").dataset.busy;
-  if (!ready) {
-    const miss = [!S.start && !where && "a start point (or a place under Where)", !S.contour && "a picture", !mtn && "an answer to the mountain question"].filter(Boolean);
-    $("goStatus").className = "status"; $("goStatus").textContent = "Still needed: " + miss.join(", ") + ".";
-  } else if (!$("goStatus").dataset.busy && /^Still needed/.test($("goStatus").textContent)) { $("goStatus").className = "status"; $("goStatus").textContent = "Ready."; }
+  $("animalBtn").disabled = !((S.start || where) && mtn) || !!$("goStatus").dataset.busy;
+  // only replace the hint line, never a result or an error
+  const g = $("goStatus"), hint = !g.textContent || /^(Still needed|Ready\.|Set a start point)/.test(g.textContent);
+  if (g.dataset.busy || !hint) return;
+  const miss = [!S.start && !where && "a start point (or a place under Where)", !S.contour && "a picture", !mtn && "an answer to the mountain question"].filter(Boolean);
+  g.className = "status"; g.textContent = miss.length ? "Still needed: " + miss.join(", ") + "." : "Ready.";
 }
 document.querySelectorAll('input[name="mtn"]').forEach(r => r.addEventListener("change", updateGo));
 $("where").addEventListener("input", updateGo);
-document.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => { $("where").value = b.dataset.where; updateGo(); }));
+document.querySelectorAll("[data-where]").forEach(b => b.addEventListener("click", () => { $("where").value = b.dataset.where; updateGo(); }));
 $("goBtn").onclick = () => { progressOpen("Drawing your route");
   run().then(() => progressClose(true), e => { progressClose(false); status(e.message || String(e), true); console.error(e); })
     .finally(() => { delete $("goStatus").dataset.busy; updateGo(); }); };
@@ -973,11 +1149,11 @@ function status(t, err) { $("goStatus").className = "status" + (err ? " err" : "
 const tick = () => new Promise(r => setTimeout(r, 0));
 function parsePace() { const m = $("pace").value.trim().match(/^(\d+)(?::(\d{1,2}))?$/); return m ? (+m[1]) + (+(m[2] || 0)) / 60 : 6; }
 
-function settings() {
+function settings(noPicture) {
   const maxM = Math.max(2, +$("maxKm").value || 20) * 1000;
   let sizes = [2500, 4000, 6000, 8500, 11500, 15000, 19000].filter(P => P * 1.3 <= maxM); // street routes run ~30% longer than the outline
   if (!sizes.length) sizes = [Math.max(1500, maxM / 1.3 * 0.9)];
-  return { allowTrails: document.querySelector('input[name="mtn"]:checked').value === "yes", maxM, sizes, unit: normShape(S.contour) };
+  return { allowTrails: document.querySelector('input[name="mtn"]:checked').value === "yes", maxM, sizes, unit: noPicture ? null : normShape(S.contour) };
 }
 
 async function run() {
@@ -999,7 +1175,7 @@ async function runNear(opts) {
   const { lat, lon } = S.start, proj = projector(lat, lon), half = 3000;
   status("Loading streets around your start point…"); progressTo(3, "Loading streets around your start…", 24); await tick();
   const sw = proj.ll(-half, -half), ne = proj.ll(half, half);
-  const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]]), proj, opts.allowTrails);
+  const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]], HIGHWAYS, 0, opts.allowTrails), proj, opts.allowTrails);
   status("Fitting your picture onto the streets…"); progressTo(26, "Fitting your picture onto the streets…", 30); await tick();
   const cands = searchPlacements(G, opts.unit, { sizes: opts.sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
     reach: P => P / (2 * Math.PI) * 0.8 + 250 });
@@ -1139,13 +1315,15 @@ function liveUpdate(R, fresh) {
 }
 
 async function evalPlace(pl, opts, onProgress = () => {}, server = 0) {
-  const proj = projector(pl.lat, pl.lon), half = 3000;
+  // only the three largest sizes (bigger drawings match better), and only as much map as they need
+  const sizes = opts.sizes.slice(-3), Rmax = sizes[sizes.length - 1] / (2 * Math.PI);
+  const proj = projector(pl.lat, pl.lon), half = Math.round(Math.min(3000, Rmax * 1.1 + 600));
   const sw = proj.ll(-half, -half), ne = proj.ll(half, half);
   onProgress(0.02, 0.6);
-  const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]], HW_LIGHT, server), proj, opts.allowTrails);
+  const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]], HW_LIGHT, server, opts.allowTrails), proj, opts.allowTrails);
   if (G.grid.size < 40) return []; // water, fields or mountains with no paths
   onProgress(0.62, 0.75); await tick();
-  const c = searchPlacements(G, opts.unit, { sizes: opts.sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
+  const c = searchPlacements(G, opts.unit, { sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
     reach: P => Math.max(200, half - 150 - P / (2 * Math.PI) * 0.9), step: P => Math.max(160, P * 0.04) });
   onProgress(0.75, 0.8);
   const r = await routeCandidates(G, pickDiverse(c, 2), opts.unit, [0, 0], false, opts.maxM, proj, (i, n) => onProgress(0.75 + 0.25 * i / n, 0.75 + 0.25 * (i + 1) / n));
@@ -1189,7 +1367,7 @@ function renderCands() {
   const box = $("cands"); box.innerHTML = "";
   S.cands.forEach((c, i) => {
     const b = document.createElement("button"); b.type = "button"; b.className = "cand"; b.id = "cand" + i;
-    const label = c.place || (S.cands.length === 1 ? "Route" : ["Compact", "Medium", "Large"][Math.round(i * 2 / Math.max(1, S.cands.length - 1))]);
+    const label = c.label || c.place || (S.cands.length === 1 ? "Route" : ["Compact", "Medium", "Large"][Math.round(i * 2 / Math.max(1, S.cands.length - 1))]);
     const t = document.createElement("b"); t.textContent = label;
     const s = document.createElement("span"); s.textContent = `${(c.dist / 1000).toFixed(1)} km · ${c.match}% match`;
     b.append(t, s); b.onclick = () => { S.userPicked = true; select(i); }; box.appendChild(b);
@@ -1251,7 +1429,7 @@ function asRoute(c) { // the parts of a result worth keeping
   if (!c.id) {
     const d = new Date(), km = (c.dist / 1000).toFixed(1);
     c.id = "r" + d.getTime().toString(36) + Math.random().toString(36).slice(2, 6);
-    c.name = `${S.imgName || "Route Art"}${c.place && c.place !== "Near your start" ? " · " + c.place : ""} · ${km} km`;
+    c.name = `${c.animal || S.imgName || "Route Art"}${c.place && c.place !== "Near your start" ? " · " + c.place : ""} · ${km} km`;
     c.date = d.toISOString();
   }
   return { id: c.id, name: c.name, date: c.date, dist: c.dist, trail: c.trail, gain: c.gain ?? null, match: c.match, pace: $("pace").value,
@@ -1332,7 +1510,9 @@ function renderSaved() {
     li.append(meta, fol, sh, del); ul.appendChild(li);
   }
 }
+window.__routeArtToasts = []; // read by the tests
 function toast(msg) {
+  window.__routeArtToasts.push(msg);
   const t = $("toast"); t.textContent = msg; t.hidden = false;
   clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2500);
 }

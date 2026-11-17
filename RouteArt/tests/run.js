@@ -44,7 +44,8 @@ const PLACES = [["망원동", 6500, 0], ["성수동", -6500, 0], ["연남동", 0
 const HEART = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="white"/>
 <path d="M150 260 C 40 180 10 120 40 75 C 70 30 130 40 150 90 C 170 40 230 30 260 75 C 290 120 260 180 150 260 Z" fill="black"/></svg>`;
 
-async function scenario(browser, name, { mountains, lake, maxKm = 20, after, where, noStart }) {
+async function scenario(browser, name, { mountains, lake, maxKm = 20, after, where, noStart, button = "#goBtn", animal }) {
+  const net = { streets: 0 };
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block", acceptDownloads: true });
   const page = await context.newPage();
   const errors = [];
@@ -58,7 +59,16 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after, whe
       const q = decodeURIComponent(r.request().postData().slice(5));
       await new Promise(res => setTimeout(res, +(process.env.SLOW || 400))); // real map data takes seconds; keeps the progress bar test meaningful on fast machines
       if (q.includes("place~")) return json({ elements: PLACES.map(([name, dx, dy], i) => ({ type: "node", id: 9e6 + i, lat: LAT0 + dy / ky, lon: LON0 + dx / kx, tags: { place: "suburb", name } })) });
-      return json(fakeCity(q.match(/\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\)/).slice(1).map(Number), { lake }));
+      net.streets++;
+      const city = fakeCity(q.match(/\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\)/).slice(1).map(Number), { lake });
+      if (!q.includes("out count")) return json(city);
+      // answer like the real server does for the compact query: untagged ways in groups
+      // (streets, big roads, trails) separated by count markers, then the nodes
+      const ways = city.elements.filter(e => e.type === "way"), nodes = city.elements.filter(e => e.type === "node");
+      const skel = w => ({ type: "way", id: w.id, nodes: w.nodes }), count = { type: "count", id: 0, tags: {} };
+      const trailsWanted = q.includes(".t out skel");
+      return json({ elements: [...ways.filter(w => !w.tags.sac_scale).map(skel), count, count,
+        ...(trailsWanted ? [...ways.filter(w => w.tags.sac_scale).map(skel), count] : []), ...nodes] });
     }
     if (u.includes("nominatim") && u.includes("/search")) {
       if (new URL(u).searchParams.get("q") === "Seoul")
@@ -78,12 +88,13 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after, whe
     await page.waitForFunction(() => document.getElementById("startStatus").textContent.startsWith("Start"));
   }
   if (where) await page.fill("#where", where);
-  await page.setInputFiles("#file", { name: "heart.svg", mimeType: "image/svg+xml", buffer: Buffer.from(HEART) });
+  if (animal) await page.click(`[data-animal="${animal}"]`);
+  else if (button === "#goBtn") await page.setInputFiles("#file", { name: "heart.svg", mimeType: "image/svg+xml", buffer: Buffer.from(HEART) });
   await page.waitForTimeout(300);
-  if (!(await page.isDisabled("#goBtn"))) throw new Error("button must wait for the mountain question");
+  if (!(await page.isDisabled(button))) throw new Error("button must wait for the mountain question");
   await page.fill("#maxKm", String(maxKm));
   await page.check(`input[name=mtn][value=${mountains ? "yes" : "no"}]`);
-  await page.click("#goBtn");
+  await page.click(button);
   let liveWhileSearching = null;
   if (where) {
     await page.waitForFunction(() => !document.getElementById("results").hidden || document.getElementById("goStatus").classList.contains("err"), null, { timeout: 120000 });
@@ -96,13 +107,17 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after, whe
     .catch(async err => { throw new Error(`${name}: no result. Status: ${await page.textContent("#goStatus")} ${errors.join("; ")}`); });
   await page.waitForTimeout(500);
   const out = await page.evaluate(() => ({
+    imgName: S.imgName, hasShape: !!S.contour,
     progress: window.__routeArtProgress.slice(), overlayHidden: document.getElementById("prog").hidden,
     status: goStatus.textContent, note: areaNote.textContent,
     options: [...document.querySelectorAll(".cand")].map(b => b.textContent),
     km: parseFloat(sDist.textContent), trailKm: parseFloat(sTrail.textContent), match: parseInt(sMatch.textContent),
   }));
   out.live = liveWhileSearching;
-  if (after) out.after = await after(page, context);
+  out.toasts = await page.evaluate(() => window.__routeArtToasts.slice());
+  if (process.env.SHOTS) await (await page.$("#map")).screenshot({ path: path.join(process.env.SHOTS, "map-" + name.replace(/[^a-z]+/gi, "-") + ".png") });
+  out.streetDownloads = net.streets;
+  if (after) out.after = await after(page, context, net);
   await context.close();
   return { name, errors, ...out };
 }
@@ -179,7 +194,9 @@ async function photoAndPaintCheck(browser) {
   });
   await page.setInputFiles("#file", { name: "photo.svg", mimeType: "image/svg+xml", buffer: Buffer.from(PHOTO) });
   await page.waitForTimeout(600);
-  const res = { mode: await page.getAttribute('[data-mode="photo"]', "aria-pressed"), photo: await box() };
+  await page.click('[data-mode="drawing"]'); await page.click('[data-mode="photo"]'); // switching modes must not touch Where
+  const whereAfter = await page.inputValue("#where");
+  const res = { whereAfter, mode: await page.getAttribute('[data-mode="photo"]', "aria-pressed"), photo: await box() };
   // paint: clear everything, then paint a tall bar down the middle of the picture
   await page.click("#paintBtn");
   await page.click("#ptClear");
@@ -267,8 +284,14 @@ async function installCheck(browser) {
   ok(e.note.includes("Seoul") && e.options.some(o => PLACES.some(([n]) => o.includes(n))), `${e.name}: options are named places in Seoul`);
   ok(e.match >= 70, `${e.name}: shape match ${e.match}% >= 70%`);
   ok(e.live && e.live.busy && e.live.mini && e.live.stop, `${e.name}: first results appear while the search keeps going, with a Stop button`);
-  ok(e.live && /match found in/.test(e.live.toast), `${e.name}: a 90%+ match pops up straight away ("${e.live && e.live.toast}")`);
-  const w = await scenario(browser, "Where: The World", { mountains: true, where: "The World", maxKm: 8 });
+  ok(e.toasts.some(t => /match found in/.test(t)), `${e.name}: 90%+ matches pop up as they're found (${e.toasts.join(" / ")})`);
+  const w = await scenario(browser, "Where: The World", { mountains: true, where: "The World", maxKm: 8, after: async (page, context, net) => {
+    const before = net.streets;
+    await page.click("#goBtn");
+    await page.waitForFunction(() => { const g = document.getElementById("goStatus"); return !g.dataset.busy && /^Done/.test(g.textContent); }, null, { timeout: 120000 });
+    return { again: net.streets - before };
+  } });
+  ok(w.after.again === 0 && w.streetDownloads > 0, `${w.name}: searching again reuses the saved areas (${w.streetDownloads} downloads first time, ${w.after.again} the second)`);
   ok(w.status.startsWith("Done") && w.note.includes("the world") && w.options.length, `${w.name}: found cities (${w.options.join(", ")})`);
   ok(d.status.startsWith("Done") && d.km <= 6, `${d.name}: respects a 6 km limit (${d.km} km)`);
   const f = a.after;
@@ -277,8 +300,16 @@ async function installCheck(browser) {
   ok(/<trkpt lat=/.test(f.gpx) && f.gpx.includes("<gpx"), `share: GPX file produced (${f.gpxName})`);
   ok(f.savedBefore === 1 && f.savedAfterReload === 1, "my routes: route saved and still there after reopening");
   ok(f.armed.includes("again") && f.savedAfterDelete === 0, "my routes: delete asks for a second tap, then removes it");
+  const an = await scenario(browser, "animal: pick the cat", { mountains: true, animal: "Cat" });
+  ok(an.imgName === "Cat" && an.hasShape && an.status.startsWith("Done") && an.match >= 60, `${an.name}: the cat shape makes a route (${an.match}% match)`);
+  const rec = await scenario(browser, "Which animals fit here?", { mountains: true, button: "#animalBtn" });
+  const names = ["Cat", "Dog", "Rabbit", "Bird", "Fish", "Whale", "Turtle", "Elephant"];
+  ok(rec.status.startsWith("Done") && rec.options.length >= 3 && rec.options.every(o => names.some(n => o.startsWith(n))),
+    `${rec.name}: ranks animals (${rec.options.join(" | ")})`);
+  ok(rec.streetDownloads === 1, `${rec.name}: one street download for all 8 animals (${rec.streetDownloads})`);
   const pp = await photoAndPaintCheck(browser);
   ok(pp.mode === "true", "photo: a photo switches to Photo mode by itself");
+  ok(pp.whereAfter === "", `photo: the Drawing/Photo buttons leave Where alone ("${pp.whereAfter}")`);
   ok(pp.photo.aspect > 1.2 && pp.photo.aspect < 1.9 && pp.photo.wFrac < 0.8, `photo: finds the object despite uneven light (aspect ${pp.photo.aspect.toFixed(2)}, width ${Math.round(pp.photo.wFrac * 100)}% of picture)`);
   ok(pp.paint.aspect < 0.5 && /painted/.test(pp.paintNote), `paint: the painted tall bar becomes the shape (aspect ${pp.paint.aspect.toFixed(2)})`);
   const tr = await traceCheck(browser);
@@ -292,7 +323,7 @@ async function installCheck(browser) {
     ok(p[0] === 0 && p[p.length - 1] === 100 && rising && p.length >= 3 && s.overlayHidden,
       `${s.name}: progress bar ran 0% → 100% without going back (${p.length} steps), then closed`);
   }
-  for (const s of [a, b, c, d, e, w]) ok(!s.errors.length, `${s.name}: no script errors ${s.errors.join("; ")}`);
+  for (const s of [a, b, c, d, e, w, an, rec]) ok(!s.errors.length, `${s.name}: no script errors ${s.errors.join("; ")}`);
   await browser.close(); server.close();
   for (const [pass, msg] of checks) console.log(pass ? "PASS" : "FAIL", msg);
   for (const s of [a, b, c, d, e]) console.log(`  ${s.name}: ${s.options.join(" | ")}`);
