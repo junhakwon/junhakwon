@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Route Art</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: one narrow column of numbered steps (they really are a sequence), map and results below. */
+:root {
+  --bg: #eef1ee; --surface: #ffffff; --fg: #18211c; --muted: #5d6a62; --line: #d5ddd7;
+  --route: #2347ff; --ghost: #ff6b3d; --ok: #1d8a4e; --warn: #b26a00;
+  --display: "Bricolage Grotesque", "Inter", system-ui, sans-serif;
+  --body: "Inter", system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #111613; --surface: #1a211d; --fg: #e8eee9; --muted: #9aa8a0; --line: #2c3631;
+          --route: #6f8bff; --ghost: #ff8a63; --ok: #4cc283; --warn: #e3a23c; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
+.wrap { max-width: 760px; margin: 0 auto; padding-block: 24px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 16px; }
+header h1 { font: 800 clamp(34px, 8vw, 52px)/1 var(--display); margin: 0; letter-spacing: -0.02em; }
+header h1 span { color: var(--route); }
+header p { margin: 8px 0 0; color: var(--muted); max-width: 60ch; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.step h2 { margin: 0; font: 600 18px/1.2 var(--display); display: flex; gap: 10px; align-items: center; }
+.num { font: 500 12px/1 var(--mono); width: 26px; height: 26px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--fg); color: var(--surface); flex: none; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.row > input[type=text] { flex: 1 1 220px; min-width: 0; }
+input[type=text], input[type=number] { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 12px; }
+.fields input { width: 100%; min-width: 0; }
+button, .btn { font: 600 14px/1 var(--body); border-radius: 10px; padding: 11px 14px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-flex; gap: 6px; align-items: center; }
+button.primary, .btn.primary { background: var(--route); border-color: var(--route); color: #fff; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, label.choice:focus-within { outline: 2px solid var(--route); outline-offset: 2px; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+.status { font: 500 13px/1.4 var(--mono); color: var(--muted); min-height: 1.4em; margin: 0; }
+.status.err { color: var(--ghost); }
+.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+label.choice { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+label.choice:has(input:checked) { border-color: var(--route); background: color-mix(in srgb, var(--route) 8%, transparent); }
+label.choice small { display: block; color: var(--muted); }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.fields label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.drop { border: 1.5px dashed var(--line); border-radius: 12px; padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: center; }
+.drop canvas { width: 100%; aspect-ratio: 1; max-width: 100%; background: var(--bg); border-radius: 8px; }
+.drop figure { margin: 0; display: grid; gap: 4px; }
+.drop figcaption { font: 500 11px/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+#map { height: 440px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
+.cands { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.cand { text-align: left; display: grid; gap: 2px; padding: 12px; }
+.cand.on { border-color: var(--route); background: color-mix(in srgb, var(--route) 10%, transparent); }
+.cand b { font: 600 14px/1.2 var(--display); }
+.cand span { font: 500 12px/1.3 var(--mono); color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin: 0; }
+.stats div { display: grid; gap: 2px; }
+.stats dt { font: 500 11px/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.stats dd { margin: 0; font: 600 22px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.pill { font: 500 12px/1 var(--mono); padding: 5px 8px; border-radius: 99px; border: 1px solid currentColor; }
+.pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); }
+ol.how { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
+.leaflet-container { font: inherit; }
+.km { font: 500 10px/16px var(--mono); background: var(--fg); color: var(--surface); border-radius: 8px; text-align: center; }
+@media (max-width: 480px) { .drop { grid-template-columns: 1fr 1fr; } #map { height: 360px; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Route <span>Art</span></h1>
+    <p>Pick a start point and a picture. Route Art fits the picture onto real streets and trails and gives you a GPX file for your Garmin.</p>
+  </header>
+
+  <section class="step" aria-labelledby="h1s">
+    <h2 id="h1s"><span class="num">1</span>Where are you starting?</h2>
+    <div class="row">
+      <input type="text" id="addr" placeholder="Address or place, e.g. 신림역" autocomplete="off">
+      <button id="findBtn" type="button">Find</button>
+      <button id="gpsBtn" type="button">Use my location</button>
+    </div>
+    <p class="hint">You can also tap the map to set or move the start point.</p>
+    <p class="status" id="startStatus">No start point yet.</p>
+  </section>
+
+  <section class="step" aria-labelledby="h2s">
+    <h2 id="h2s"><span class="num">2</span>Choose a picture</h2>
+    <input type="file" id="file" accept="image/*">
+    <div class="drop">
+      <figure><canvas id="srcCv" width="200" height="200"></canvas><figcaption>Your image</figcaption></figure>
+      <figure><canvas id="outCv" width="200" height="200"></canvas><figcaption>Traced outline</figcaption></figure>
+    </div>
+    <div class="row"><button type="button" id="invertBtn">Swap shape and background</button></div>
+    <p class="hint">Bold silhouettes work best. The route follows the outer edge of the largest shape.</p>
+  </section>
+
+  <section class="step" aria-labelledby="h3s">
+    <h2 id="h3s"><span class="num">3</span>Route settings</h2>
+    <div class="fields">
+      <label for="maxKm">Max distance (km)<input type="number" id="maxKm" value="20" min="2" max="60" step="1"></label>
+      <label for="pace">Easy pace (min:sec per km)<input type="text" id="pace" value="6:00" inputmode="numeric"></label>
+    </div>
+    <label class="choice"><input type="checkbox" id="loopHome" checked><span>Start and finish at my start point<small>Adds the run to and from the drawing.</small></span></label>
+    <fieldset class="step" style="border-style:dashed;padding:12px;margin:0">
+      <legend style="padding:0 6px;font-weight:600">Is it okay if the route goes over mountains?</legend>
+      <p class="hint">Seoul's hills and mountains have great trails, but they are slower, steeper and darker at night.</p>
+      <div class="choices">
+        <label class="choice"><input type="radio" name="mtn" value="yes"><span>Yes, trails are fine<small>Use mountain and dirt trails when they fit the shape.</small></span></label>
+        <label class="choice"><input type="radio" name="mtn" value="no"><span>No, streets only<small>Stay on roads, sidewalks and paved paths.</small></span></label>
+      </div>
+    </fieldset>
+    <button class="primary" id="goBtn" type="button" disabled>Draw my route</button>
+    <p class="status" id="goStatus">Set a start point, choose a picture and answer the mountain question.</p>
+  </section>
+
+  <div id="map" role="region" aria-label="Map"></div>
+
+  <section class="step" id="results" hidden aria-labelledby="h4s">
+    <h2 id="h4s"><span class="num">4</span>Your route</h2>
+    <p class="hint" id="areaNote"></p>
+    <div class="cands" id="cands"></div>
+    <dl class="stats">
+      <div><dt>Distance</dt><dd id="sDist">–</dd></div>
+      <div><dt>Est. time</dt><dd id="sTime">–</dd></div>
+      <div><dt>Climb</dt><dd id="sGain">–</dd></div>
+      <div><dt>Trail</dt><dd id="sTrail">–</dd></div>
+    </dl>
+    <div class="row"><span class="pill" id="sMatch"></span><span class="hint" id="sTimeNote"></span></div>
+    <div class="row">
+      <a class="btn primary" id="dlBtn" href="#" download="route-art.gpx">Download GPX</a>
+      <button type="button" id="shareBtn" hidden>Share GPX</button>
+    </div>
+    <div>
+      <p style="margin:0 0 4px;font-weight:600">Put it on your Forerunner 265</p>
+      <ol class="how">
+        <li>Open Garmin Connect on a computer (connect.garmin.com), go to Training &amp; Planning, then Courses, then Import, and choose the GPX file.</li>
+        <li>Save the course, then choose Send to Device.</li>
+        <li>On the watch: Run, then hold Menu, Navigation, Courses, and pick it.</li>
+      </ol>
+      <p class="hint" style="margin-top:6px">Naver Map can't open GPX files. To follow it on your phone, open the file in an app such as Strava, Komoot or a GPX viewer.</p>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+// ---------- config ----------
+const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter", "https://overpass.private.coffee/api/interpreter"];
+const NOMINATIM = "https://nominatim.openstreetmap.org";
+const ELEV = "https://api.open-meteo.com/v1/elevation";
+const HIGHWAYS = "footway|path|pedestrian|living_street|residential|unclassified|service|tertiary|tertiary_link|secondary|secondary_link|primary|primary_link|cycleway|track|steps|bridleway";
+const UNPAVED = /^(unpaved|dirt|ground|earth|grass|gravel|fine_gravel|rock|rocks|sand|mud|wood|woodchips|pebblestone|compacted)$/;
+const PAVED = /^(paved|asphalt|concrete|concrete:plates|paving_stones|sett|bricks|metal|rubber|tartan)$/;
+
+const $ = id => document.getElementById(id);
+const S = { start: null, contour: null, invert: false, img: null, cands: [], sel: 0, startMarker: null, layers: [] };
+
+// ---------- map ----------
+const map = L.map("map", { zoomControl: true }).setView([37.5665, 126.978], 12);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+  maxZoom: 19, subdomains: "abcd",
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+}).addTo(map);
+map.on("click", e => setStart(e.latlng.lat, e.latlng.lng, "Map point"));
+
+function setStart(lat, lon, label) {
+  S.start = { lat, lon, label };
+  if (S.startMarker) S.startMarker.setLatLng([lat, lon]);
+  else S.startMarker = L.circleMarker([lat, lon], { radius: 8, color: "#fff", weight: 3, fillColor: "#18211c", fillOpacity: 1 }).addTo(map);
+  S.startMarker.bindTooltip("Start");
+  $("startStatus").className = "status";
+  $("startStatus").textContent = `Start: ${label} (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
+  if (map.getZoom() < 14) map.setView([lat, lon], 15);
+  updateGo();
+}
+
+$("findBtn").onclick = geocode;
+$("addr").addEventListener("keydown", e => { if (e.key === "Enter") geocode(); });
+async function geocode() {
+  const q = $("addr").value.trim(); if (!q) return;
+  const st = $("startStatus"); st.className = "status"; st.textContent = "Searching…";
+  // Nominatim knows Korean road names better than house numbers, so retry without the number.
+  const tries = [q, q.replace(/\s*\d+(-\d+)?\s*$/, "")].filter((v, i, a) => v && a.indexOf(v) === i);
+  for (const t of tries) {
+    try {
+      const r = await fetch(`${NOMINATIM}/search?format=jsonv2&limit=1&countrycodes=kr&accept-language=ko,en&q=${encodeURIComponent(t)}`);
+      const j = await r.json();
+      if (j.length) {
+        setStart(+j[0].lat, +j[0].lon, t === q ? q : `${t} (near ${q})`);
+        if (t !== q) st.textContent += ". Couldn't find the exact number, so the start is on the street. Tap the map to fine-tune it.";
+        return;
+      }
+    } catch (e) { st.className = "status err"; st.textContent = "Couldn't reach the address search. Check your connection, or tap the map."; return; }
+  }
+  st.className = "status err"; st.textContent = "No match. Try a landmark or station name, or tap the map.";
+}
+$("gpsBtn").onclick = () => {
+  const st = $("startStatus");
+  if (!navigator.geolocation) { st.className = "status err"; st.textContent = "This browser can't share your location. Tap the map instead."; return; }
+  st.textContent = "Getting your location…";
+  navigator.geolocation.getCurrentPosition(p => setStart(p.coords.latitude, p.coords.longitude, "My location"),
+    () => { st.className = "status err"; st.textContent = "Location was blocked. Allow it in the browser, or tap the map."; },
+    { enableHighAccuracy: true, timeout: 15000 });
+};
+
+// ---------- image tracing ----------
+$("file").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const img = new Image();
+  img.onload = () => { S.img = img; S.invert = false; traceAndShow(); };
+  img.src = URL.createObjectURL(f);
+};
+$("invertBtn").onclick = () => { if (S.img) { S.invert = !S.invert; traceAndShow(); } };
+
+function traceAndShow() {
+  const res = traceImage(S.img, S.invert);
+  const sc = $("srcCv").getContext("2d"); sc.clearRect(0, 0, 200, 200);
+  const k = Math.min(200 / S.img.width, 200 / S.img.height);
+  sc.drawImage(S.img, (200 - S.img.width * k) / 2, (200 - S.img.height * k) / 2, S.img.width * k, S.img.height * k);
+  S.contour = res ? res.pts : null;
+  drawOutline();
+  updateGo();
+}
+function drawOutline() {
+  const c = $("outCv"), g = c.getContext("2d"); g.clearRect(0, 0, 200, 200);
+  if (!S.contour) { g.fillStyle = getComputedStyle(document.body).color; g.font = "13px sans-serif"; g.fillText("No shape found", 50, 104); return; }
+  let mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
+  for (const [x, y] of S.contour) { mnx = Math.min(mnx, x); mny = Math.min(mny, y); mxx = Math.max(mxx, x); mxy = Math.max(mxy, y); }
+  const k = 170 / Math.max(mxx - mnx, mxy - mny);
+  g.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--route"); g.lineWidth = 3; g.lineJoin = "round";
+  g.beginPath();
+  S.contour.forEach(([x, y], i) => { const px = 100 + (x - (mnx + mxx) / 2) * k, py = 100 - (y - (mny + mxy) / 2) * k; i ? g.lineTo(px, py) : g.moveTo(px, py); });
+  g.closePath(); g.stroke();
+}
+
+function traceImage(img, invert) {
+  const MAX = 220, k = Math.min(1, MAX / Math.max(img.width, img.height));
+  const w = Math.max(8, Math.round(img.width * k)), h = Math.max(8, Math.round(img.height * k));
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+  const g = cv.getContext("2d"); g.drawImage(img, 0, 0, w, h);
+  const d = g.getImageData(0, 0, w, h).data, n = w * h;
+  let transp = 0; for (let i = 0; i < n; i++) if (d[i * 4 + 3] < 128) transp++;
+  const ink = new Uint8Array(n);
+  if (transp / n > 0.05) { for (let i = 0; i < n; i++) ink[i] = d[i * 4 + 3] >= 128 ? 1 : 0; }
+  else {
+    const lum = new Uint8Array(n), hist = new Array(256).fill(0);
+    for (let i = 0; i < n; i++) { const v = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) | 0; lum[i] = v; hist[v]++; }
+    // Otsu threshold
+    let sum = 0; for (let t = 0; t < 256; t++) sum += t * hist[t];
+    let sB = 0, wB = 0, best = 0, thr = 128;
+    for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = n - wB; if (!wF) break; sB += t * hist[t];
+      const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) ** 2; if (v > best) { best = v; thr = t; } }
+    for (let i = 0; i < n; i++) ink[i] = lum[i] <= thr ? 1 : 0;
+    // If the border is mostly "ink", the picture is light-on-dark: flip it.
+    let b = 0, bt = 0;
+    for (let x = 0; x < w; x++) { b += ink[x] + ink[(h - 1) * w + x]; bt += 2; }
+    for (let y = 0; y < h; y++) { b += ink[y * w] + ink[y * w + w - 1]; bt += 2; }
+    if (b / bt > 0.5) for (let i = 0; i < n; i++) ink[i] ^= 1;
+  }
+  if (invert) for (let i = 0; i < n; i++) ink[i] ^= 1;
+  // largest 8-connected component, on a grid padded by one pixel
+  const W = w + 2, H = h + 2, m = new Uint8Array(W * H);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) m[(y + 1) * W + x + 1] = ink[y * w + x];
+  const lab = new Int32Array(W * H); let bestL = 0, bestN = 0, L = 0; const stack = [];
+  for (let i = 0; i < W * H; i++) if (m[i] && !lab[i]) {
+    L++; let cnt = 0; stack.push(i); lab[i] = L;
+    while (stack.length) { const p = stack.pop(); cnt++; const px = p % W, py = (p / W) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const q = (py + dy) * W + px + dx;
+        if (q >= 0 && q < W * H && m[q] && !lab[q]) { lab[q] = L; stack.push(q); } } }
+    if (cnt > bestN) { bestN = cnt; bestL = L; }
+  }
+  if (bestN < 20) return null;
+  const on = (x, y) => x >= 0 && y >= 0 && x < W && y < H && lab[y * W + x] === bestL;
+  let s = -1; for (let i = 0; i < W * H; i++) if (lab[i] === bestL) { s = i; break; }
+  const sx = s % W, sy = (s / W) | 0;
+  const DIRS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]];
+  const pts = [[sx, sy]]; let cx = sx, cy = sy, dir = 7, first = -1;
+  for (let it = 0; it < 4 * W * H; it++) {
+    const start = dir % 2 === 0 ? (dir + 7) % 8 : (dir + 6) % 8;
+    let found = -1;
+    for (let j = 0; j < 8; j++) { const dd = (start + j) % 8; if (on(cx + DIRS[dd][0], cy + DIRS[dd][1])) { found = dd; break; } }
+    if (found < 0) break; // single pixel
+    if (cx === sx && cy === sy && it > 0 && found === first) break;
+    if (first < 0) first = found;
+    cx += DIRS[found][0]; cy += DIRS[found][1]; dir = found;
+    pts.push([cx, cy]);
+  }
+  pts.pop();
+  if (pts.length < 8) return null;
+  // image coords (y down) -> math coords (y up), simplify, resample
+  const poly = rdpClosed(pts.map(([x, y]) => [x, -y]), 0.9);
+  return { pts: resampleClosed(poly, 400) };
+}
+function rdp(p, eps) {
+  if (p.length < 3) return p.slice();
+  let dmax = 0, idx = 0; const a = p[0], b = p[p.length - 1];
+  for (let i = 1; i < p.length - 1; i++) { const d = segDist(p[i][0], p[i][1], a[0], a[1], b[0], b[1]); if (d > dmax) { dmax = d; idx = i; } }
+  if (dmax <= eps) return [a, b];
+  const l = rdp(p.slice(0, idx + 1), eps), r = rdp(p.slice(idx), eps); return l.slice(0, -1).concat(r);
+}
+function rdpClosed(p, eps) {
+  let far = 0, fd = -1; for (let i = 0; i < p.length; i++) { const d = (p[i][0] - p[0][0]) ** 2 + (p[i][1] - p[0][1]) ** 2; if (d > fd) { fd = d; far = i; } }
+  const a = rdp(p.slice(0, far + 1), eps), b = rdp(p.slice(far).concat([p[0]]), eps);
+  return a.slice(0, -1).concat(b.slice(0, -1));
+}
+function resampleClosed(p, N) {
+  const q = p.concat([p[0]]), cum = [0];
+  for (let i = 1; i < q.length; i++) cum.push(cum[i - 1] + Math.hypot(q[i][0] - q[i - 1][0], q[i][1] - q[i - 1][1]));
+  const T = cum[cum.length - 1], out = []; let j = 1;
+  for (let k = 0; k < N; k++) { const t = T * k / N; while (cum[j] < t) j++;
+    const f = (t - cum[j - 1]) / ((cum[j] - cum[j - 1]) || 1); out.push([q[j - 1][0] + f * (q[j][0] - q[j - 1][0]), q[j - 1][1] + f * (q[j][1] - q[j - 1][1])]); }
+  return out;
+}
+function segDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  let t = L2 ? ((px - ax) * dx + (py - ay) * dy) / L2 : 0; t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+}
+// unit shape: centered on its centroid, perimeter 1
+function normShape(pts) {
+  let cx = 0, cy = 0; for (const [x, y] of pts) { cx += x; cy += y; } cx /= pts.length; cy /= pts.length;
+  let P = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; P += Math.hypot(b[0] - a[0], b[1] - a[1]); }
+  return pts.map(([x, y]) => [(x - cx) / P, (y - cy) / P]);
+}
+
+// ---------- geometry ----------
+function projector(lat0, lon0) {
+  const ky = 111320, kx = 111320 * Math.cos(lat0 * Math.PI / 180);
+  return { xy: (lat, lon) => [(lon - lon0) * kx, (lat - lat0) * ky], ll: (x, y) => [lat0 + y / ky, lon0 + x / kx] };
+}
+function place(unit, P, rot, cx, cy) {
+  const c = Math.cos(rot), s = Math.sin(rot);
+  return unit.map(([x, y]) => [cx + P * (x * c - y * s), cy + P * (x * s + y * c)]);
+}
+
+// ---------- street graph ----------
+async function overpass(bb) { // bb = [s, w, n, e]
+  const q = `[out:json][timeout:120];way["highway"~"^(${HIGHWAYS})$"]["area"!="yes"](${bb.map(v => v.toFixed(5)).join(",")})->.w;.w out qt;node(w.w);out skel qt;`;
+  let lastErr;
+  for (const url of OVERPASS) {
+    try {
+      const r = await fetch(url, { method: "POST", body: "data=" + encodeURIComponent(q), headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return await r.json();
+    } catch (e) { lastErr = e; }
+  }
+  throw new Error("Map data servers are busy (" + (lastErr && lastErr.message) + "). Try again in a minute.");
+}
+function isTrail(t) {
+  const hw = t.highway, sf = t.surface || "";
+  if (t.sac_scale || t.trail_visibility || t.mtb_scale) return true;
+  if (UNPAVED.test(sf)) return hw === "path" || hw === "track" || hw === "footway" || hw === "bridleway" || hw === "steps";
+  if (!sf && (hw === "path" || hw === "track" || hw === "bridleway")) return true;
+  return false;
+}
+function buildGraph(data, proj, allowTrails) {
+  const nodePos = new Map();
+  for (const el of data.elements) if (el.type === "node") nodePos.set(el.id, proj.xy(el.lat, el.lon));
+  const idx = new Map(), X = [], Y = [], adj = [];
+  const nid = id => { let i = idx.get(id); if (i === undefined) { const p = nodePos.get(id); if (!p) return -1; i = X.length; idx.set(id, i); X.push(p[0]); Y.push(p[1]); adj.push([]); } return i; };
+  for (const el of data.elements) {
+    if (el.type !== "way" || !el.nodes) continue;
+    const t = el.tags || {};
+    if (/^(no|private)$/.test(t.foot || "") || /^(no|private)$/.test(t.access || "") && !/^(yes|designated|permissive)$/.test(t.foot || "")) continue;
+    const trail = isTrail(t);
+    if (trail && !allowTrails) continue;
+    const big = /^(primary|primary_link|secondary|secondary_link)$/.test(t.highway) && t.sidewalk !== "both" && t.sidewalk !== "separate";
+    const pen = big ? 1.25 : 1;
+    for (let k = 1; k < el.nodes.length; k++) {
+      const a = nid(el.nodes[k - 1]), b = nid(el.nodes[k]); if (a < 0 || b < 0 || a === b) continue;
+      const len = Math.hypot(X[a] - X[b], Y[a] - Y[b]);
+      adj[a].push(b, len, pen, trail ? 1 : 0); adj[b].push(a, len, pen, trail ? 1 : 0);
+    }
+  }
+  // keep the largest connected piece
+  const n = X.length, comp = new Int32Array(n).fill(-1); let best = -1, bestN = 0;
+  for (let i = 0, c = 0; i < n; i++) if (comp[i] < 0) {
+    const st = [i]; comp[i] = c; let cnt = 0;
+    while (st.length) { const u = st.pop(); cnt++; const A = adj[u]; for (let j = 0; j < A.length; j += 4) if (comp[A[j]] < 0) { comp[A[j]] = c; st.push(A[j]); } }
+    if (cnt > bestN) { bestN = cnt; best = c; } c++;
+  }
+  const keep = new Uint8Array(n); for (let i = 0; i < n; i++) keep[i] = comp[i] === best ? 1 : 0;
+  const G = { X, Y, adj, keep, n, cell: 60, grid: new Map() };
+  for (let i = 0; i < n; i++) if (keep[i]) { const k = cellKey(G, X[i], Y[i]); let a = G.grid.get(k); if (!a) G.grid.set(k, a = []); a.push(i); }
+  return G;
+}
+function cellKey(G, x, y) { return Math.floor(x / G.cell) * 100003 + Math.floor(y / G.cell); }
+function nearest(G, x, y, maxR) {
+  const cx = Math.floor(x / G.cell), cy = Math.floor(y / G.cell), rings = Math.ceil(maxR / G.cell);
+  let best = -1, bd = Infinity;
+  for (let r = 0; r <= rings; r++) {
+    for (let i = cx - r; i <= cx + r; i++) for (let j = cy - r; j <= cy + r; j++) {
+      if (Math.max(Math.abs(i - cx), Math.abs(j - cy)) !== r) continue;
+      const a = G.grid.get(i * 100003 + j); if (!a) continue;
+      for (const v of a) { const d = (G.X[v] - x) ** 2 + (G.Y[v] - y) ** 2; if (d < bd) { bd = d; best = v; } }
+    }
+    if (best >= 0 && Math.sqrt(bd) <= r * G.cell) break;
+  }
+  return best < 0 ? { i: -1, d: maxR } : { i: best, d: Math.min(Math.sqrt(bd), maxR) };
+}
+
+// ---------- fitting ----------
+function fitError(G, pts) { // RMS distance from shape points to the street network, capped
+  let s = 0; for (const [x, y] of pts) { const d = nearest(G, x, y, 350).d; s += d * d; } return Math.sqrt(s / pts.length);
+}
+function searchPlacements(G, unit, opt) {
+  const samples = resampleClosed(unit, 72);
+  const out = [];
+  for (const P of opt.sizes) {
+    const Rs = P / (2 * Math.PI), step = Math.max(120, P * 0.025), reach = opt.reach(P);
+    for (let deg = -30; deg <= 30; deg += 15) {
+      const rot = deg * Math.PI / 180;
+      for (let ox = -reach; ox <= reach + 1; ox += step) for (let oy = -reach; oy <= reach + 1; oy += step) {
+        if (ox * ox + oy * oy > reach * reach) continue;
+        const cx = opt.cx + ox, cy = opt.cy + oy;
+        const pts = place(samples, P, rot, cx, cy);
+        if (!pts.every(([x, y]) => x > opt.bx[0] && x < opt.bx[2] && y > opt.bx[1] && y < opt.bx[3])) continue;
+        const err = fitError(G, pts);
+        out.push({ P, rot, cx, cy, err, rel: err / Rs });
+      }
+    }
+  }
+  return out;
+}
+function pickDiverse(list, k) {
+  // split the sizes into small / medium / large groups and keep the best fit of each,
+  // plus a runner-up so a route that ends up too long still leaves options
+  const sizes = [...new Set(list.map(c => c.P))].sort((a, b) => a - b);
+  const groups = Array.from({ length: k }, () => []);
+  sizes.forEach((P, i) => groups[Math.min(k - 1, Math.floor(i * k / sizes.length))].push(P));
+  const out = [];
+  for (const g of groups) {
+    const best = list.filter(c => g.includes(c.P)).sort((a, b) => a.rel - b.rel);
+    out.push(...best.slice(0, 2).filter((c, i) => i === 0 || c.P !== best[0].P));
+  }
+  return out;
+}
+
+// A* on the street graph, pulled toward the drawn line between two waypoints
+function heapPush(h, item) { h.push(item); let i = h.length - 1; while (i) { const p = (i - 1) >> 1; if (h[p][0] <= h[i][0]) break; [h[p], h[i]] = [h[i], h[p]]; i = p; } }
+function heapPop(h) { const top = h[0], last = h.pop(); if (h.length) { h[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i;
+  if (l < h.length && h[l][0] < h[m][0]) m = l; if (r < h.length && h[r][0] < h[m][0]) m = r; if (m === i) break; [h[m], h[i]] = [h[i], h[m]]; i = m; } } return top; }
+function astar(G, s, t, ax, ay, bx, by, pull) {
+  if (s === t) return [s];
+  const g = new Map([[s, 0]]), prev = new Map(), h = [];
+  const H = v => Math.hypot(G.X[v] - G.X[t], G.Y[v] - G.Y[t]);
+  heapPush(h, [H(s), s]); let pops = 0;
+  while (h.length) {
+    const [, u] = heapPop(h); if (u === t) break; if (++pops > 60000) return null;
+    const gu = g.get(u), A = G.adj[u];
+    for (let j = 0; j < A.length; j += 4) {
+      const v = A[j]; if (!G.keep[v]) continue;
+      let c = A[j + 1] * A[j + 2];
+      if (pull) { const dev = segDist((G.X[u] + G.X[v]) / 2, (G.Y[u] + G.Y[v]) / 2, ax, ay, bx, by); c *= 1 + Math.min(dev, 250) / 40; }
+      const nv = gu + c, ov = g.get(v);
+      if (ov === undefined || nv < ov) { g.set(v, nv); prev.set(v, u); heapPush(h, [nv + H(v), v]); }
+    }
+  }
+  if (!prev.has(t)) return null;
+  const path = [t]; let c = t; while (c !== s) { c = prev.get(c); path.push(c); } return path.reverse();
+}
+function routeShape(G, shape, startXY, loopHome) {
+  const P = perimeter(shape), N = Math.max(40, Math.min(240, Math.round(P / 110)));
+  let wp = resampleClosed(shape, N);
+  // begin the drawing at the point nearest the runner's start
+  let k0 = 0, kd = Infinity; wp.forEach(([x, y], i) => { const d = (x - startXY[0]) ** 2 + (y - startXY[1]) ** 2; if (d < kd) { kd = d; k0 = i; } });
+  wp = wp.slice(k0).concat(wp.slice(0, k0)); wp.push(wp[0]);
+  const snaps = wp.map(([x, y]) => nearest(G, x, y, 400).i);
+  let nodes = [];
+  const add = seg => { if (!seg) return false; if (nodes.length && nodes[nodes.length - 1] === seg[0]) seg = seg.slice(1); nodes.push(...seg); return true; };
+  const home = nearest(G, startXY[0], startXY[1], 800).i;
+  if (loopHome && home >= 0) nodes.push(home);
+  let last = loopHome && home >= 0 ? home : -1, lastXY = startXY;
+  for (let i = 0; i < wp.length; i++) {
+    const v = snaps[i]; if (v < 0 || v === last) continue;
+    if (last < 0) { nodes.push(v); last = v; lastXY = wp[i]; continue; }
+    const pull = !(loopHome && i === 0);
+    const seg = astar(G, last, v, lastXY[0], lastXY[1], wp[i][0], wp[i][1], pull) || astar(G, last, v, 0, 0, 0, 0, false);
+    if (add(seg)) { last = v; lastXY = wp[i]; }
+  }
+  if (loopHome && home >= 0 && last !== home) add(astar(G, last, home, 0, 0, 0, 0, false));
+  nodes = removeSpurs(G, nodes, 160);
+  return nodes;
+}
+function removeSpurs(G, nodes, maxLen) {
+  // drop short out-and-back detours (A … B … A) that snapping creates
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 1; i < nodes.length - 1; i++) {
+      if (nodes[i - 1] !== nodes[i + 1]) continue;
+      const a = nodes[i - 1], b = nodes[i];
+      if (Math.hypot(G.X[a] - G.X[b], G.Y[a] - G.Y[b]) * 2 <= maxLen) { nodes.splice(i, 2); changed = true; break; }
+    }
+  }
+  return nodes;
+}
+function perimeter(p) { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += Math.hypot(b[0] - a[0], b[1] - a[1]); } return s; }
+function routeStats(G, nodes, shape) {
+  let dist = 0, trail = 0;
+  for (let i = 1; i < nodes.length; i++) {
+    const a = nodes[i - 1], b = nodes[i], A = G.adj[a]; let len = Math.hypot(G.X[a] - G.X[b], G.Y[a] - G.Y[b]), tr = 0;
+    for (let j = 0; j < A.length; j += 4) if (A[j] === b) { tr = A[j + 3]; break; }
+    dist += len; if (tr) trail += len;
+  }
+  // how closely the route follows the drawing (both directions)
+  const rpts = nodes.map(v => [G.X[v], G.Y[v]]);
+  const sh = resampleClosed(shape, 150);
+  const d1 = sh.map(([x, y]) => minDistToPolyline(x, y, rpts));
+  const d2 = rpts.filter((_, i) => i % 2 === 0).map(([x, y]) => minDistToPolyline(x, y, sh.concat([sh[0]])));
+  const mean = (d1.reduce((a, b) => a + b, 0) / d1.length + d2.reduce((a, b) => a + b, 0) / d2.length) / 2;
+  const Rs = perimeter(shape) / (2 * Math.PI);
+  const match = Math.round(100 * Math.max(0, Math.min(1, 1 - mean / (0.35 * Rs))));
+  return { dist, trail, match };
+}
+function minDistToPolyline(x, y, p) { let m = Infinity; for (let i = 1; i < p.length; i++) m = Math.min(m, segDist(x, y, p[i - 1][0], p[i - 1][1], p[i][0], p[i][1])); return m; }
+
+// ---------- main flow ----------
+function updateGo() {
+  const mtn = document.querySelector('input[name="mtn"]:checked');
+  const ready = S.start && S.contour && mtn;
+  $("goBtn").disabled = !ready;
+  if (!ready) {
+    const miss = [!S.start && "a start point", !S.contour && "a picture", !mtn && "an answer to the mountain question"].filter(Boolean);
+    $("goStatus").className = "status"; $("goStatus").textContent = "Still needed: " + miss.join(", ") + ".";
+  } else if (!$("goStatus").dataset.busy) { $("goStatus").className = "status"; $("goStatus").textContent = "Ready."; }
+}
+document.querySelectorAll('input[name="mtn"]').forEach(r => r.addEventListener("change", updateGo));
+$("goBtn").onclick = () => run().catch(e => { status(e.message || String(e), true); console.error(e); }).finally(() => { delete $("goStatus").dataset.busy; $("goBtn").disabled = false; });
+function status(t, err) { $("goStatus").className = "status" + (err ? " err" : ""); $("goStatus").textContent = t; }
+const tick = () => new Promise(r => setTimeout(r, 0));
+function parsePace() { const m = $("pace").value.trim().match(/^(\d+)(?::(\d{1,2}))?$/); return m ? (+m[1]) + (+(m[2] || 0)) / 60 : 6; }
+
+async function run() {
+  $("goStatus").dataset.busy = "1"; $("goBtn").disabled = true;
+  const allowTrails = document.querySelector('input[name="mtn"]:checked').value === "yes";
+  const maxM = Math.max(2, +$("maxKm").value || 20) * 1000, loopHome = $("loopHome").checked;
+  const { lat, lon } = S.start, proj = projector(lat, lon), unit = normShape(S.contour);
+  const detour = 1.3; // street routes run ~30% longer than the ideal outline
+
+  // Stage 1: the neighborhood around the start
+  const half = 3000;
+  status("Loading streets around your start point…"); await tick();
+  const bbLL = (cx, cy, hf) => { const sw = proj.ll(cx - hf, cy - hf), ne = proj.ll(cx + hf, cy + hf); return [sw[0], sw[1], ne[0], ne[1]]; };
+  let data = await overpass(bbLL(0, 0, half));
+  status("Fitting your picture onto the streets…"); await tick();
+  let G = buildGraph(data, proj, allowTrails); data = null;
+  const sizesFor = budget => [2500, 4000, 6000, 8500, 11500, 15000, 19000].filter(P => P * detour <= budget);
+  const nbBudget = maxM; // approach legs are counted after routing
+  let sizes = sizesFor(nbBudget); if (!sizes.length) sizes = [Math.max(1500, maxM / detour * 0.9)];
+  let cands = searchPlacements(G, unit, { sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
+    reach: P => P / (2 * Math.PI) * 0.8 + 250 });
+  let picked = onePerSize(await routeCandidates(G, pickDiverse(cands, 3), unit, [0, 0], loopHome, maxM, proj, allowTrails));
+  let area = "neighborhood";
+
+  // Stage 2: if nothing fits nearby, look around the city
+  if (!picked.length || picked[0].match < 55) {
+    status("It doesn't fit well nearby. Looking around the city…"); await tick();
+    let city = null;
+    try {
+      const r = await fetch(`${NOMINATIM}/reverse?format=jsonv2&zoom=10&accept-language=ko,en&lat=${lat}&lon=${lon}`);
+      const j = await r.json(); const a = j.address || {};
+      city = { name: a.city || a.province || a.state || a.county || j.name, bb: j.boundingbox ? j.boundingbox.map(Number) : null };
+    } catch (e) { /* fall back to a ring around the start */ }
+    const bbox = city && city.bb ? [proj.xy(city.bb[0], city.bb[2]), proj.xy(city.bb[1], city.bb[3])] : [[-12000, -12000], [12000, 12000]];
+    const centers = [];
+    for (let x = bbox[0][0] + 3000; x <= bbox[1][0] - 3000; x += 5000) for (let y = bbox[0][1] + 3000; y <= bbox[1][1] - 3000; y += 5000)
+      if (Math.hypot(x, y) > 3500) centers.push([x, y]);
+    centers.sort((a, b) => Math.hypot(...a) - Math.hypot(...b));
+    let pool = picked.slice();
+    const cityHalf = 3500;
+    for (const [i, [cx, cy]] of centers.slice(0, 5).entries()) {
+      status(`Trying area ${i + 1} of ${Math.min(5, centers.length)} in ${city && city.name ? city.name : "the city"}…`); await tick();
+      let d2; try { d2 = await overpass(bbLL(cx, cy, cityHalf)); } catch (e) { continue; }
+      const G2 = buildGraph(d2, proj, allowTrails); d2 = null;
+      const c2 = searchPlacements(G2, unit, { sizes: sizesFor(maxM), cx, cy, bx: [cx - cityHalf + 150, cy - cityHalf + 150, cx + cityHalf - 150, cy + cityHalf - 150],
+        reach: () => 1500 });
+      const r2 = await routeCandidates(G2, pickDiverse(c2, 2), unit, [cx, cy], false, maxM, proj, allowTrails);
+      r2.forEach(c => c.far = Math.hypot(c.cx, c.cy));
+      pool = pool.concat(r2);
+      if (r2.some(c => c.match >= 75)) break;
+    }
+    pool.sort((a, b) => b.match - a.match);
+    if (pool.length && (!picked.length || pool[0].match > picked[0].match + 5)) { picked = onePerSize(pool); area = city && city.name ? city.name : "the city"; }
+  }
+  // drop options that don't really look like the picture, unless nothing better exists
+  const good = picked.filter(c => c.match >= 40);
+  if (good.length) picked = good;
+  if (!picked.length) throw new Error("Couldn't fit this picture within the distance limit. Try a larger max distance or a simpler picture.");
+  picked.sort((a, b) => a.dist - b.dist);
+  S.cands = picked;
+  $("areaNote").textContent = area === "neighborhood"
+    ? "These routes fit in your neighborhood. Pick one to compare."
+    : `Your picture didn't fit well close by, so these routes are elsewhere in ${area}. The distance to get there isn't included.`;
+  renderCands(); select(picked.reduce((bi, c, i, a) => c.match > a[bi].match ? i : bi, 0));
+  status(`Done. ${picked.length} route option${picked.length > 1 ? "s" : ""} found.`);
+  $("results").hidden = false;
+  if (window.innerWidth < 800) $("map").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function onePerSize(list) { // up to 3 routes that differ clearly in length, best match first
+  const out = [];
+  for (const c of list.slice().sort((a, b) => b.match - a.match))
+    if (out.length < 3 && out.every(o => Math.abs(o.dist - c.dist) > 0.15 * Math.min(o.dist, c.dist))) out.push(c);
+  return out;
+}
+async function routeCandidates(G, list, unit, startXY, loopHome, maxM, proj, allowTrails) {
+  const out = [];
+  for (const c of list) {
+    await tick();
+    const shape = place(unit, c.P, c.rot, c.cx, c.cy);
+    const nodes = routeShape(G, shape, loopHome ? startXY : shape[0], loopHome);
+    if (nodes.length < 4) continue;
+    const st = routeStats(G, nodes, shape);
+    if (st.dist > maxM) continue;
+    out.push({ ...c, shape, ll: nodes.map(v => proj.ll(G.X[v], G.Y[v])), shapeLL: shape.map(([x, y]) => proj.ll(x, y)), ...st, gain: null });
+  }
+  return out.sort((a, b) => b.match - a.match);
+}
+
+function renderCands() {
+  const box = $("cands"); box.innerHTML = "";
+  S.cands.forEach((c, i) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "cand"; b.id = "cand" + i;
+    const label = S.cands.length === 1 ? "Route" : ["Compact", "Medium", "Large"][Math.round(i * 2 / Math.max(1, S.cands.length - 1))];
+    b.innerHTML = `<b>${label}</b><span>${(c.dist / 1000).toFixed(1)} km · ${c.match}% match</span>`;
+    b.onclick = () => select(i); box.appendChild(b);
+  });
+}
+async function select(i) {
+  S.sel = i; const c = S.cands[i];
+  document.querySelectorAll(".cand").forEach((b, j) => b.classList.toggle("on", j === i));
+  S.layers.forEach(l => map.removeLayer(l)); S.layers = [];
+  const css = getComputedStyle(document.documentElement);
+  S.layers.push(L.polygon(c.shapeLL, { color: css.getPropertyValue("--ghost").trim(), weight: 2, dashArray: "6 6", fill: false }).addTo(map));
+  const line = L.polyline(c.ll, { color: css.getPropertyValue("--route").trim(), weight: 5, opacity: .9, lineJoin: "round" }).addTo(map);
+  S.layers.push(line);
+  // kilometer markers
+  let acc = 0, nextKm = 1000;
+  for (let k = 1; k < c.ll.length; k++) {
+    acc += haversine(c.ll[k - 1], c.ll[k]);
+    if (acc >= nextKm) { S.layers.push(L.marker(c.ll[k], { icon: L.divIcon({ className: "km", html: String(nextKm / 1000), iconSize: [18, 16] }), keyboard: false }).addTo(map)); nextKm += 1000; }
+  }
+  if (c.far) S.layers.push(L.circleMarker(c.ll[0], { radius: 7, color: "#fff", weight: 3, fillColor: css.getPropertyValue("--route").trim(), fillOpacity: 1 }).bindTooltip("Route start").addTo(map));
+  map.fitBounds(line.getBounds(), { padding: [24, 24] });
+  showStats(c);
+  if (c.gain === null) { c.gain = await elevationGain(c.ll).catch(() => undefined); if (S.sel === i) showStats(c); }
+  makeGpx(c);
+}
+function showStats(c) {
+  const pace = parsePace(), km = c.dist / 1000, trailKm = c.trail / 1000;
+  // ITRA-style effort: 100 m of climbing counts like 1 km; trail kilometres run ~25% slower
+  const effort = (km - trailKm) + trailKm * 1.25 + (c.gain || 0) / 100;
+  const mins = effort * pace;
+  $("sDist").textContent = km.toFixed(1) + " km";
+  $("sTime").textContent = fmtTime(mins);
+  $("sGain").textContent = c.gain === null ? "…" : c.gain === undefined ? "n/a" : Math.round(c.gain) + " m";
+  $("sTrail").textContent = trailKm.toFixed(1) + " km";
+  const m = $("sMatch"); m.textContent = c.match + "% shape match"; m.className = "pill " + (c.match >= 65 ? "ok" : "warn");
+  $("sTimeNote").textContent = `At ${$("pace").value}/km${c.gain ? ", counting the climb" : ""}${c.far ? `. Route start is ${(c.far / 1000).toFixed(1)} km from you` : ""}.`;
+}
+$("pace").addEventListener("change", () => { if (S.cands[S.sel]) showStats(S.cands[S.sel]); });
+function fmtTime(m) { const h = Math.floor(m / 60), mm = Math.round(m % 60); return h ? `${h} h ${String(mm).padStart(2, "0")} min` : `${mm} min`; }
+function haversine(a, b) { const r = Math.PI / 180, dl = (b[0] - a[0]) * r, dn = (b[1] - a[1]) * r;
+  const h = Math.sin(dl / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dn / 2) ** 2; return 12742000 * Math.asin(Math.sqrt(h)); }
+async function elevationGain(ll) {
+  // sample about every 100 m
+  const pts = [ll[0]]; let acc = 0;
+  for (let i = 1; i < ll.length; i++) { acc += haversine(ll[i - 1], ll[i]); if (acc >= 100) { pts.push(ll[i]); acc = 0; } }
+  const ele = [];
+  for (let i = 0; i < pts.length; i += 100) {
+    const ch = pts.slice(i, i + 100);
+    const r = await fetch(`${ELEV}?latitude=${ch.map(p => p[0].toFixed(5)).join(",")}&longitude=${ch.map(p => p[1].toFixed(5)).join(",")}`);
+    const j = await r.json(); if (!j.elevation) throw new Error("no elevation"); ele.push(...j.elevation);
+  }
+  let gain = 0; for (let i = 1; i < ele.length; i++) { const d = ele[i] - ele[i - 1]; if (d > 1) gain += d; }
+  return gain;
+}
+function makeGpx(c) {
+  const name = "Route Art " + new Date().toISOString().slice(0, 10);
+  const pts = c.ll.map(([la, lo]) => `<trkpt lat="${la.toFixed(6)}" lon="${lo.toFixed(6)}"></trkpt>`).join("\n      ");
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Route Art" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>${name}</name></metadata>
+  <trk>
+    <name>${name}</name>
+    <type>running</type>
+    <trkseg>
+      ${pts}
+    </trkseg>
+  </trk>
+</gpx>
+`;
+  const blob = new Blob([gpx], { type: "application/gpx+xml" });
+  const a = $("dlBtn"); if (a.dataset.url) URL.revokeObjectURL(a.dataset.url);
+  a.href = a.dataset.url = URL.createObjectURL(blob); a.download = name.replace(/\s+/g, "-").toLowerCase() + ".gpx";
+  const file = new File([blob], a.download, { type: "application/gpx+xml" });
+  const sb = $("shareBtn");
+  sb.hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+  sb.onclick = () => navigator.share({ files: [file], title: name }).catch(() => {});
+}
+window.__routeArt = { traceImage, normShape, buildGraph, searchPlacements, routeShape, routeStats, projector, place, pickDiverse };
+</script>
+</body>
+</html>
