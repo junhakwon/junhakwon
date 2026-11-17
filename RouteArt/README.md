@@ -45,16 +45,17 @@ The app asks every time. It never saves or pre-fills a start, so you can start f
 - **Use my location** uses the phone's GPS.
 - **Tap the map** to set or fine-tune the start. This always works.
 
-### 2. Tracing the picture
-1. Shrink the image to about 220 px.
-2. Decide what counts as the shape:
-   - If the image has transparency, the opaque part is the shape.
-   - If not, Otsu's method picks the light/dark split automatically.
-   - If the border comes out mostly "shape", the picture is light-on-dark and gets flipped.
-   - The **Swap shape and background** button flips it by hand.
-3. Close 1-pixel gaps, then pick the main subject among the blobs. Each blob is ranked by the area its outer outline encloses, not by its pixel count, because a line-art character is mostly background inside a thin outline. Blobs touching the image edge (phone status bars, black bottom bars, frames) count for only 5%. Specks and text are ignored.
-4. Walk around its outer edge (Moore-neighbour tracing), smooth the pixel staircase (Ramer–Douglas–Peucker), and resample to 400 evenly spaced points.
-5. Normalise to a shape with perimeter 1, centred on its middle. From here the shape is just a curve that can be scaled, rotated and moved.
+### 2. Turning the picture into a shape
+1. Shrink the image to about 200 px.
+2. Decide whether it's a **drawing or a photo**. Drawings and screenshots are mostly flat colour (75–98% of side-by-side pixels are identical); photos almost never are. The Drawing / Photo buttons show the guess and let the runner switch.
+3. Find the subject:
+   - **Drawing:** transparency if there is any, otherwise a light/dark split (Otsu's method), flipped if the picture is light-on-dark.
+   - **Photo:** the colours along the edges of the photo are grouped (k-means, 6 groups) as "background", and each pixel is scored by how unlike all of them it is. Brightness counts for 40% as much as colour, so shadows and uneven light don't cut the object in half, and pixels near the middle get a small boost. Otsu's method then splits object from background.
+4. Close 1-pixel gaps, then keep the main blob, ranked by the area its outline encloses (a line-art character is mostly background inside a thin outline). Blobs touching the edge (status bars, bottom bars, frames, sky) count for only 5%. Holes are filled.
+5. **Pixelate** to a 64-cell grid by majority vote. This removes texture and tiny details the street grid can't draw anyway. The result is shown as blocks with the outline on top.
+6. Trace the outer edge (Moore-neighbour tracing), smooth the staircase (Ramer–Douglas–Peucker) and resample to 400 points.
+
+**Paint the shape** opens the picture full screen with the detected shape painted on in blue. The runner can paint and erase with a finger (adjustable brush, undo, clear, auto-detect again). What they paint replaces steps 2–4 and goes straight to pixelating.
 
 ### 3. The mountain question
 The **Draw my route** button stays off until the runner answers "Is it okay if the route goes over mountains?" A path counts as a trail when it has:
@@ -90,7 +91,7 @@ A detailed picture only looks right where the streets happen to run in its shape
 
 While a route is being made, a progress card in the middle of the screen shows 0–100% and the current step ("Checking 망원동 · 3 of 8"). The map servers don't report download progress, so each step moves the bar to a fixed point and it creeps forward while waiting, never going backwards.
 
-Places are checked 8 at a time, two in parallel (the public map servers allow two requests at once), showing the best match so far. **Check more places** continues through the list. Each place loads a 6 × 6 km square of streets without sidewalks and service roads, which keeps the download small. Results show the top 3 places, each named, with how far it is from the start point if one was set. No start point is needed for a place search.
+Places are checked three at a time, each on a different public map server. Results appear as soon as any place fits, and a 90%+ match pops up straight away ("94% match found in 망원동"). The map follows the best match until the runner taps an option. Once results exist, the progress card shrinks to a strip at the bottom with a **Stop** button, so the map can be used while the search continues. A search stops after 24 places, or once three places match 90%+ (after at least 8). **Keep searching** continues through the list. Each place loads a 6 × 6 km square of streets without sidewalks and service roads, which keeps the download small. Results show the top 3 places, each named, with how far it is from the start point if one was set. No start point is needed for a place search.
 
 ### 8. Scoring and estimates
 - **Shape match %** is the average gap between the drawing part of the route and the picture, measured both ways, compared with the drawing's size (100% minus 4% for every 1% of the radius it's off on average). 100% means the route lies exactly on the outline. Options under 40% are hidden.
@@ -135,6 +136,9 @@ All are free and need no key. If the app ever gets lots of users, the public Ove
 - "Seoul" with no start point checks named neighbourhoods and returns named options
 - "The World" checks cities around the world
 - the progress bar runs from 0% to 100% without going backwards, then closes
+- a place search shows results while it's still running, with a Stop button and a pop-up for 90%+ matches
+- a photo with uneven light switches to Photo mode and finds the object
+- painting a shape by hand replaces the detected one
 - the Draw button stays off until the start, the picture and the mountain answer are all given
 - no script errors
 
@@ -151,7 +155,7 @@ The GitHub Action `.github/workflows/route-art.yml` runs this on every push that
 | 1 | App logic: tracing, fitting, routing, city fallback, mountain filter, time estimate, GPX | Claude | Done |
 | 2 | Automated tests with a fake city | Claude | Done, 15/15 pass |
 | 3 | CI that tests every push and publishes to GitHub Pages | Claude | Done |
-| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 32/32 checks pass |
+| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 37/37 checks pass |
 | 4 | Merge the branch into the default branch | You (GitHub app or website, tablet is fine) | To do |
 | 5 | Turn on Pages once: Settings → Pages → Source → **GitHub Actions**, then re-run the "Route Art" workflow | You (website) | To do |
 | 6 | Open `https://junhakwon.github.io/junhakwon/RouteArt/` in Safari on your iPhone, then Share → Add to Home Screen | You | To do |

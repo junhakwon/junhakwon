@@ -1,7 +1,7 @@
 // Route Art service worker: makes the app open without a connection and keeps
 // the map tiles you've already viewed so Follow mode still has a map on weak signal.
 // Map data, address search and elevation always go to the network.
-const VERSION = "route-art-v3";
+const VERSION = "route-art-v4";
 const SHELL = VERSION + "-shell";
 const TILES = "route-art-tiles";
 const MAX_TILES = 4000;
