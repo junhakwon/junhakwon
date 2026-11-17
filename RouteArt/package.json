@@ -1,0 +1,12 @@
+{
+  "name": "route-art",
+  "private": true,
+  "description": "Turn a picture into a runnable GPX route on real streets.",
+  "scripts": {
+    "test": "node tests/run.js"
+  },
+  "devDependencies": {
+    "leaflet": "1.9.4",
+    "playwright": "1.48.2"
+  }
+}
