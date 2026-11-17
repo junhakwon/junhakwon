@@ -1,8 +1,25 @@
 # Route Art
 
-Turn any picture into a running route on real streets, then follow it with a Garmin watch.
+Turn any picture into a running route on real streets, then follow it on your phone or your Garmin watch.
 
-The whole app is one file, `index.html`. It runs in the phone's browser and talks to the map services directly. There's no server and no account, and it stores nothing.
+Route Art is an installable web app (PWA). On an iPhone you open it in Safari, tap Share → **Add to Home Screen**, and from then on it has its own icon and opens full screen like any app. It talks to the map services directly from the phone. There's no server and no account, and routes are saved on the phone only.
+
+| File | What it is |
+|---|---|
+| `index.html` | The whole app: tracing, fitting, routing, Follow mode, My routes |
+| `sw.js` | Service worker: lets the app open offline and keeps map tiles along saved routes |
+| `manifest.webmanifest`, `icon-*.png` | What the home-screen install uses (name, icon, full-screen) |
+| `tools/make-icons.js` | Draws the icons |
+| `tests/run.js` | End-to-end tests |
+
+## Using it on an iPhone
+1. Open the app link in **Safari** and tap Share → **Add to Home Screen**. The app shows a reminder the first time.
+2. Set the start, choose a photo, answer the mountain question, and tap **Draw my route**.
+3. Pick an option, then:
+   - **Follow on this phone:** a full-screen map with your live position, km done / to go, time left, and an "Off route" warning when you're more than ~35 m from the line. The screen stays on while following (iOS 16.4+).
+   - **Share GPX:** opens the iPhone share sheet: Garmin Connect, Files, AirDrop, Komoot, Strava, Gaia GPS…
+   - **Download GPX:** saves the file to Files.
+4. Following or sharing saves the route to **My routes**, so you can follow or share it again later. The map tiles along it are stored too, so the map still shows on weak signal.
 
 ## How a route gets made
 
@@ -75,8 +92,14 @@ These routes begin on the drawing itself. The app says how far away it is, and t
 - **Time** uses the trail-running "effort distance" idea: 100 m of climbing counts as 1 extra km, and trail kilometres count 1.25×. Effort distance × your easy pace = estimated time.
 - **Options:** up to three clearly different lengths (Compact, Medium, Large), with the best match shown first.
 
-### 9. Getting it onto the watch
-The GPX file is a single track with one point per intersection. Garmin Connect turns it into a Course with turn-by-turn and off-course alerts on the Forerunner 265. On phones that support it, a Share button sends the file straight to another app. Naver Map can't import GPX; Strava, Komoot or any GPX viewer can.
+### 9. Getting it onto the watch and the phone
+The GPX file is a single track with one point per intersection, named after the picture (e.g. `heart-11.9-km.gpx`). Garmin Connect turns it into a Course with off-course alerts on the Forerunner 265. Naver Map and Apple Maps can't import GPX, which is why Route Art has its own **Follow** mode.
+
+### 10. Follow mode
+The phone's GPS position is projected onto the route to work out how far along you are. The search looks near your last position first, so a route that crosses itself (like the middle of a heart) doesn't jump ahead, and falls back to the whole route if you've moved far. Done is drawn grey, the rest blue. "Off route" triggers past the larger of 35 m and the GPS accuracy (capped at 80 m). Time left = distance left × the pace saved with the route.
+
+### 11. Offline
+The service worker caches the app and the map library, so the app opens with no connection. Map tiles the app has shown are kept (up to ~4,000), and when a route is saved the tiles along it are fetched at zoom 14–16. Making a *new* route still needs a connection, because the street data comes live from OpenStreetMap.
 
 ## Services used
 
@@ -93,6 +116,10 @@ All are free and need no key. If the app ever gets lots of users, the public Ove
 ## Tests
 
 `tests/run.js` drives the real page in headless Chromium. Every network service is replaced by a fake city: a street grid with a river crossed by a few bridges, a mountain that only has trails, and optionally a lake around the start. It checks:
+
+- Follow mode shows progress, warns when 300 m off the route, and Share produces a valid GPX
+- My routes survives a reopen, and Delete needs a second tap
+- the service worker, manifest and icons install correctly, and iPhone Safari shows the Add to Home Screen tip
 
 - a heart fits in the neighbourhood with a ≥ 70% match, ≤ 20 km, and produces a GPX
 - streets-only mode uses 0 km of trail
@@ -114,9 +141,10 @@ The GitHub Action `.github/workflows/route-art.yml` runs this on every push that
 | 1 | App logic: tracing, fitting, routing, city fallback, mountain filter, time estimate, GPX | Claude | Done |
 | 2 | Automated tests with a fake city | Claude | Done, 15/15 pass |
 | 3 | CI that tests every push and publishes to GitHub Pages | Claude | Done |
+| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 22/22 checks pass |
 | 4 | Merge the branch into the default branch | You (GitHub app or website, tablet is fine) | To do |
 | 5 | Turn on Pages once: Settings → Pages → Source → **GitHub Actions**, then re-run the "Route Art" workflow | You (website) | To do |
-| 6 | Open `https://junhakwon.github.io/junhakwon/RouteArt/` on your phone and add it to the home screen | You | To do |
+| 6 | Open `https://junhakwon.github.io/junhakwon/RouteArt/` in Safari on your iPhone, then Share → Add to Home Screen | You | To do |
 | 7 | First real-world check (below) | You | To do |
 | 8 | Fix whatever step 7 turns up | Claude | To do |
 
@@ -128,7 +156,8 @@ Things the fake city can't prove, in order of risk:
 2. **Data size and speed:** a 6 × 6 km square of Seoul is roughly 5–15 MB of street data. Check it loads in under ~30 s on mobile data.
 3. **Trail detection:** with "No", does it really avoid 관악산-type trails? With "Yes", does it use them?
 4. **Accuracy on the ground:** run a short Compact route and compare your Garmin track with the plan. Apartment complexes and gated parks are the likely problem spots, because OpenStreetMap sometimes marks them as open.
-5. **Garmin import:** does the GPX import as a Course and navigate on the 265?
+5. **Garmin import:** does Garmin Connect show up in the share sheet? Does the GPX import as a Course and navigate on the 265?
+6. **Follow mode on a real run:** does the blue dot track smoothly, does "Off route" fire at the right times, and does the screen stay on?
 
 ## Known limits
 - The picture becomes one outline. Inner details, like the eyes of a face, are skipped.
@@ -136,6 +165,15 @@ Things the fake city can't prove, in order of risk:
 - Rotation is limited to ±30° so pictures stay upright.
 - Time estimates assume your easy pace. Traffic lights and stairs aren't counted.
 - It relies on OpenStreetMap, which is good in Seoul but can mark private complexes as passable.
+
+## Later: App Store version
+The plan is to wrap this same code with [Capacitor](https://capacitorjs.com), which turns a web app into a native iPhone app, so nothing here gets rewritten. To keep that easy, the app uses only relative paths, plain browser APIs and no build step. What the native version adds:
+- tracking that continues with the screen locked (background location)
+- voice cues ("turn left in 50 m")
+- appearing as an "Open in…" target for photos
+- possibly sending courses straight to the watch through Garmin's Courses API (needs approval from Garmin's developer program)
+
+Needs: an Apple Developer account ($99/year), signing certificates for the macOS GitHub Actions machine, and App Store review.
 
 ## Possible next steps
 - Let the runner drag, rotate and resize the drawing on the map before routing.

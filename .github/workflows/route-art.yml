@@ -47,7 +47,7 @@ jobs:
       - name: Stage the site (only the app, not the tests)
         run: |
           mkdir -p _site/RouteArt
-          cp RouteArt/index.html _site/RouteArt/
+          cp RouteArt/index.html RouteArt/sw.js RouteArt/manifest.webmanifest RouteArt/icon-*.png _site/RouteArt/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

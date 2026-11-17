@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Route Art</title>
+<meta name="description" content="Turn a picture into a running route and a GPX file for your watch.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<meta name="theme-color" content="#2347ff">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Route Art">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
@@ -22,6 +31,7 @@
           --route: #6f8bff; --ghost: #ff8a63; --ok: #4cc283; --warn: #e3a23c; color-scheme: dark; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; }
 body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--body); }
 .wrap { max-width: 760px; margin: 0 auto; padding-block: 24px 64px;
@@ -72,6 +82,34 @@ label.choice small { display: block; color: var(--muted); }
 ol.how { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
 .leaflet-container { font: inherit; }
 .km { font: 500 10px/16px var(--mono); background: var(--fg); color: var(--surface); border-radius: 8px; text-align: center; }
+.install { display: flex; gap: 10px; align-items: flex-start; background: var(--surface); border: 1px solid var(--route); border-radius: 12px; padding: 12px; }
+.install p { margin: 0; flex: 1; min-width: 0; }
+.install button { padding: 6px 10px; }
+.saved { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.saved li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.saved .meta { flex: 1 1 160px; min-width: 0; display: grid; }
+.saved .meta b { font: 600 15px/1.3 var(--display); overflow-wrap: anywhere; }
+.saved .meta span { font: 500 12px/1.4 var(--mono); color: var(--muted); }
+.saved button { padding: 8px 10px; font-size: 13px; }
+button.danger { color: var(--ghost); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 2000;
+  background: var(--fg); color: var(--surface); padding: 10px 14px; border-radius: 10px; font-weight: 600; font-size: 14px; max-width: calc(100% - 32px); }
+/* Follow mode: full-screen map with a live position */
+#follow { position: fixed; inset: 0; z-index: 1500; background: var(--bg); display: flex; flex-direction: column; }
+#fmap { flex: 1; min-height: 0; }
+.fbar { padding: calc(10px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--surface); border-bottom: 1px solid var(--line); display: grid; gap: 6px; }
+.fstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
+.fstats div { display: grid; gap: 2px; min-width: 0; }
+.fstats dt { font: 500 10px/1 var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.fstats dd { margin: 0; font: 600 22px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+#fState { margin: 0; font: 600 14px/1.3 var(--body); color: var(--muted); }
+#fState.on { color: var(--ok); } #fState.off { color: var(--ghost); }
+.fbtns { display: flex; gap: 8px; padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: var(--surface); border-top: 1px solid var(--line); }
+.fbtns button { flex: 1; justify-content: center; }
+.me { width: 18px; height: 18px; border-radius: 50%; background: #1a73ff; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(26,115,255,.35); }
+body.following { overflow: hidden; }
 @media (max-width: 480px) { .drop { grid-template-columns: 1fr 1fr; } #map { height: 360px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -82,6 +120,11 @@ ol.how { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
     <h1>Route <span>Art</span></h1>
     <p>Pick a start point and a picture. Route Art fits the picture onto real streets and trails and gives you a GPX file for your Garmin.</p>
   </header>
+
+  <div class="install" id="installTip" hidden>
+    <p><b>Install Route Art:</b> tap the Share button in Safari, then <b>Add to Home Screen</b>. It opens full screen like an app.</p>
+    <button type="button" id="installClose" aria-label="Dismiss">Got it</button>
+  </div>
 
   <section class="step" aria-labelledby="h1s">
     <h2 id="h1s"><span class="num">1</span>Where are you starting?</h2>
@@ -138,21 +181,62 @@ ol.how { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
     </dl>
     <div class="row"><span class="pill" id="sMatch"></span><span class="hint" id="sTimeNote"></span></div>
     <div class="row">
-      <a class="btn primary" id="dlBtn" href="#" download="route-art.gpx">Download GPX</a>
-      <button type="button" id="shareBtn" hidden>Share GPX</button>
+      <button type="button" class="primary" id="followBtn">Follow on this phone</button>
+      <button type="button" id="shareBtn">Share GPX</button>
+      <a class="btn" id="dlBtn" href="#" download="route-art.gpx">Download GPX</a>
     </div>
+    <p class="hint">Following or sharing a route also saves it to My routes, with its map area stored for weak signal.</p>
     <div>
       <p style="margin:0 0 4px;font-weight:600">Put it on your Forerunner 265</p>
       <ol class="how">
-        <li>Open Garmin Connect on a computer (connect.garmin.com), go to Training &amp; Planning, then Courses, then Import, and choose the GPX file.</li>
+        <li>Tap Share GPX and pick Garmin Connect if it's listed. Otherwise save it to Files, then on connect.garmin.com go to Training &amp; Planning, Courses, Import.</li>
         <li>Save the course, then choose Send to Device.</li>
         <li>On the watch: Run, then hold Menu, Navigation, Courses, and pick it.</li>
       </ol>
-      <p class="hint" style="margin-top:6px">Naver Map can't open GPX files. To follow it on your phone, open the file in an app such as Strava, Komoot or a GPX viewer.</p>
+      <p class="hint" style="margin-top:6px">Naver Map and Apple Maps can't open GPX files. Use Follow on this phone, or share the file to Komoot, Strava or Gaia GPS.</p>
     </div>
+  </section>
+
+  <section class="step" id="savedBox" hidden aria-labelledby="h5s">
+    <h2 id="h5s">My routes</h2>
+    <ul class="saved" id="savedList"></ul>
+    <p class="hint">Saved on this phone only.</p>
   </section>
 </div>
 
+<div id="follow" hidden role="dialog" aria-modal="true" aria-labelledby="fName">
+  <div class="fbar">
+    <p style="margin:0;font:600 15px/1.2 var(--display)" id="fName">Route</p>
+    <dl class="fstats">
+      <div><dt>Done</dt><dd id="fDone">0.0 km</dd></div>
+      <div><dt>To go</dt><dd id="fLeft">–</dd></div>
+      <div><dt>Time left</dt><dd id="fEta">–</dd></div>
+    </dl>
+    <p id="fState">Waiting for GPS…</p>
+  </div>
+  <div id="fmap"></div>
+  <div class="fbtns">
+    <button type="button" id="fCenter">Center</button>
+    <button type="button" id="fShare">Share GPX</button>
+    <button type="button" id="fExit">Exit</button>
+  </div>
+</div>
+<div class="toast" id="toast" hidden role="status"></div>
+
+<script>
+"use strict";
+// ---------- install as an app ----------
+(function installTip() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const standalone = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+  let dismissed = false; try { dismissed = localStorage.getItem("routeArt.installTip") === "no"; } catch (e) {}
+  if (ios && !standalone && !dismissed) document.getElementById("installTip").hidden = false;
+  document.getElementById("installClose").onclick = () => { document.getElementById("installTip").hidden = true; try { localStorage.setItem("routeArt.installTip", "no"); } catch (e) {} };
+})();
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 "use strict";
@@ -218,6 +302,7 @@ $("gpsBtn").onclick = () => {
 // ---------- image tracing ----------
 $("file").onchange = e => {
   const f = e.target.files[0]; if (!f) return;
+  S.imgName = (f.name || "").replace(/\.[^.]+$/, "").replace(/^(IMG|image|photo)[_-]?\d*$/i, "").slice(0, 40);
   const img = new Image();
   img.onload = () => { S.img = img; S.invert = false; traceAndShow(); };
   img.src = URL.createObjectURL(f);
@@ -688,14 +773,25 @@ async function elevationGain(ll) {
   let gain = 0; for (let i = 1; i < ele.length; i++) { const d = ele[i] - ele[i - 1]; if (d > 1) gain += d; }
   return gain;
 }
-function makeGpx(c) {
-  const name = "Route Art " + new Date().toISOString().slice(0, 10);
-  const pts = c.ll.map(([la, lo]) => `<trkpt lat="${la.toFixed(6)}" lon="${lo.toFixed(6)}"></trkpt>`).join("\n      ");
-  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+// ---------- routes as files ----------
+function asRoute(c) { // the parts of a result worth keeping
+  if (!c.id) {
+    const d = new Date(), km = (c.dist / 1000).toFixed(1);
+    c.id = "r" + d.getTime().toString(36) + Math.random().toString(36).slice(2, 6);
+    c.name = `${S.imgName || "Route Art"} · ${km} km`;
+    c.date = d.toISOString();
+  }
+  return { id: c.id, name: c.name, date: c.date, dist: c.dist, trail: c.trail, gain: c.gain ?? null, match: c.match, pace: $("pace").value,
+    ll: c.ll.map(([a, b]) => [+a.toFixed(6), +b.toFixed(6)]) };
+}
+function xmlEsc(s) { return String(s).replace(/[<>&"']/g, ch => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[ch]); }
+function gpxText(r) {
+  const pts = r.ll.map(([la, lo]) => `<trkpt lat="${la.toFixed(6)}" lon="${lo.toFixed(6)}"></trkpt>`).join("\n      ");
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Route Art" xmlns="http://www.topografix.com/GPX/1/1">
-  <metadata><name>${name}</name></metadata>
+  <metadata><name>${xmlEsc(r.name)}</name><time>${r.date}</time></metadata>
   <trk>
-    <name>${name}</name>
+    <name>${xmlEsc(r.name)}</name>
     <type>running</type>
     <trkseg>
       ${pts}
@@ -703,15 +799,187 @@ function makeGpx(c) {
   </trk>
 </gpx>
 `;
-  const blob = new Blob([gpx], { type: "application/gpx+xml" });
-  const a = $("dlBtn"); if (a.dataset.url) URL.revokeObjectURL(a.dataset.url);
-  a.href = a.dataset.url = URL.createObjectURL(blob); a.download = name.replace(/\s+/g, "-").toLowerCase() + ".gpx";
-  const file = new File([blob], a.download, { type: "application/gpx+xml" });
-  const sb = $("shareBtn");
-  sb.hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
-  sb.onclick = () => navigator.share({ files: [file], title: name }).catch(() => {});
 }
-window.__routeArt = { traceImage, normShape, buildGraph, searchPlacements, routeShape, routeStats, projector, place, pickDiverse };
+function gpxFileName(r) { return (r.name.replace(/[^\p{L}\p{N}.]+/gu, "-").replace(/^-|-$/g, "") || "route-art") + ".gpx"; }
+async function shareGpx(r) {
+  const text = gpxText(r), name = gpxFileName(r);
+  // iOS accepts a GPX file in the share sheet (Files, AirDrop, Garmin Connect, Komoot…).
+  for (const type of ["application/gpx+xml", "application/octet-stream"]) {
+    const file = new File([text], name, { type });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: r.name }); return "shared"; }
+      catch (e) { return e && e.name === "AbortError" ? "cancelled" : downloadGpx(r); }
+    }
+  }
+  return downloadGpx(r);
+}
+function downloadGpx(r) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([gpxText(r)], { type: "application/gpx+xml" }));
+  a.download = gpxFileName(r); document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  return "downloaded";
+}
+function makeGpx(c) {
+  const a = $("dlBtn");
+  a.onclick = e => { e.preventDefault(); saveRoute(asRoute(c)); downloadGpx(asRoute(c)); };
+  $("shareBtn").onclick = async () => { saveRoute(asRoute(c)); const how = await shareGpx(asRoute(c)); if (how === "downloaded") toast("GPX downloaded"); };
+  $("followBtn").onclick = () => { const r = asRoute(c); saveRoute(r); openFollow(r); };
+}
+
+// ---------- My routes (this phone only) ----------
+const STORE = "routeArt.routes.v1";
+function loadRoutes() { try { return JSON.parse(localStorage.getItem(STORE) || "[]"); } catch (e) { return []; } }
+function storeRoutes(list) { try { localStorage.setItem(STORE, JSON.stringify(list)); return true; } catch (e) { return false; } }
+function saveRoute(r) {
+  const list = loadRoutes().filter(x => x.id !== r.id);
+  list.unshift(r);
+  while (list.length > 30) list.pop();
+  if (!storeRoutes(list)) { while (list.length > 1 && !storeRoutes(list.slice(0, -1))) list.pop(); }
+  renderSaved(); cacheTiles(r.ll);
+}
+function renderSaved() {
+  const list = loadRoutes(), ul = $("savedList");
+  $("savedBox").hidden = !list.length; ul.innerHTML = "";
+  for (const r of list) {
+    const li = document.createElement("li");
+    const meta = document.createElement("div"); meta.className = "meta";
+    const b = document.createElement("b"); b.textContent = r.name;
+    const sp = document.createElement("span");
+    sp.textContent = `${new Date(r.date).toLocaleDateString()} · ${(r.dist / 1000).toFixed(1)} km · ${r.match}% match`;
+    meta.append(b, sp);
+    const fol = document.createElement("button"); fol.type = "button"; fol.className = "primary"; fol.textContent = "Follow"; fol.onclick = () => openFollow(r);
+    const sh = document.createElement("button"); sh.type = "button"; sh.textContent = "Share GPX"; sh.onclick = async () => { if (await shareGpx(r) === "downloaded") toast("GPX downloaded"); };
+    const del = document.createElement("button"); del.type = "button"; del.className = "danger"; del.textContent = "Delete";
+    del.onclick = () => {
+      if (del.dataset.armed) { storeRoutes(loadRoutes().filter(x => x.id !== r.id)); renderSaved(); toast("Route deleted"); return; }
+      del.dataset.armed = "1"; del.textContent = "Tap again to delete";
+      setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = "Delete"; } }, 4000);
+    };
+    li.append(meta, fol, sh, del); ul.appendChild(li);
+  }
+}
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2500);
+}
+
+// ---------- offline map tiles along a route ----------
+const TILE_URL = (z, x, y) => `https://${"abcd"[(x + y) % 4]}.basemaps.cartocdn.com/rastertiles/voyager/${z}/${x}/${y}.png`;
+function tileXY(lat, lon, z) {
+  const n = 2 ** z, x = Math.floor((lon + 180) / 360 * n);
+  const r = lat * Math.PI / 180, y = Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * n);
+  return [x, y];
+}
+function routeTiles(ll) {
+  const set = new Set();
+  for (const z of [14, 15, 16]) for (const [la, lo] of ll) {
+    const [x, y] = tileXY(la, lo, z);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) if (z < 16 || (dx === 0 && dy === 0)) set.add(`${z}/${x + dx}/${y + dy}`);
+  }
+  return [...set];
+}
+async function cacheTiles(ll) {
+  if (!("serviceWorker" in navigator) || !navigator.serviceWorker.controller) return;
+  const tiles = routeTiles(ll).slice(0, 900);
+  // the service worker stores every tile the page fetches
+  for (let i = 0; i < tiles.length; i += 6) {
+    await Promise.allSettled(tiles.slice(i, i + 6).map(t => { const [z, x, y] = t.split("/").map(Number); return fetch(TILE_URL(z, x, y), { mode: "no-cors" }); }));
+  }
+}
+
+// ---------- Follow mode ----------
+const F = { map: null, layers: [], watch: null, wake: null, me: null, acc: null, center: true };
+function routeGeometry(ll) {
+  const proj = projector(ll[0][0], ll[0][1]);
+  const xy = ll.map(([a, b]) => proj.xy(a, b)), cum = [0];
+  for (let i = 1; i < xy.length; i++) cum.push(cum[i - 1] + Math.hypot(xy[i][0] - xy[i - 1][0], xy[i][1] - xy[i - 1][1]));
+  return { proj, xy, cum, total: cum[cum.length - 1] };
+}
+// Where along the route is this position? Searches near the last match first so a
+// route that crosses itself doesn't jump ahead, then the whole route if that fails.
+function progressAlong(g, lat, lon, lastIdx) {
+  const [px, py] = g.proj.xy(lat, lon), n = g.xy.length;
+  let best = { d: Infinity, i: 1, t: 0 };
+  const scan = (a, b) => {
+    for (let i = Math.max(1, a); i <= Math.min(n - 1, b); i++) {
+      const [ax, ay] = g.xy[i - 1], [bx, by] = g.xy[i], dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)) : 0;
+      const d = Math.hypot(px - ax - t * dx, py - ay - t * dy);
+      if (d < best.d) best = { d, i, t };
+    }
+  };
+  scan((lastIdx || 1) - 15, (lastIdx || 1) + 150);
+  if (best.d > 50) scan(1, n - 1);
+  const along = g.cum[best.i - 1] + best.t * (g.cum[best.i] - g.cum[best.i - 1]);
+  return { idx: best.i, along, off: best.d };
+}
+function openFollow(r) {
+  F.r = r; F.g = routeGeometry(r.ll); F.idx = 1; F.center = true;
+  $("fName").textContent = r.name;
+  $("follow").hidden = false; document.body.classList.add("following");
+  const css = getComputedStyle(document.documentElement);
+  if (!F.map) {
+    F.map = L.map("fmap", { zoomControl: false });
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxZoom: 19, subdomains: "abcd",
+      attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(F.map);
+    F.map.on("dragstart", () => { F.center = false; });
+  }
+  F.layers.forEach(l => F.map.removeLayer(l)); F.layers = []; F.me = F.acc = null;
+  F.todo = L.polyline(r.ll, { color: css.getPropertyValue("--route").trim(), weight: 6, opacity: .9 }).addTo(F.map);
+  F.done = L.polyline([], { color: css.getPropertyValue("--muted").trim(), weight: 6, opacity: .7 }).addTo(F.map);
+  F.layers.push(F.todo, F.done, L.circleMarker(r.ll[0], { radius: 7, color: "#fff", weight: 3, fillColor: css.getPropertyValue("--fg").trim(), fillOpacity: 1 }).bindTooltip("Start").addTo(F.map));
+  F.map.fitBounds(F.todo.getBounds(), { padding: [20, 20] });
+  setTimeout(() => { F.map.invalidateSize(); if (!F.me) F.map.fitBounds(F.todo.getBounds(), { padding: [20, 20] }); }, 50);
+  $("fDone").textContent = "0.0 km"; $("fLeft").textContent = (F.g.total / 1000).toFixed(1) + " km";
+  $("fEta").textContent = fmtTime(F.g.total / 1000 * parsePaceStr(r.pace));
+  setFState("Waiting for GPS…", "");
+  if (!navigator.geolocation) setFState("This browser can't share your location.", "off");
+  else F.watch = navigator.geolocation.watchPosition(onFollowPos, err => setFState(err.code === 1
+      ? "Location is off for Route Art. Allow it in Settings → Safari → Location, or in the browser."
+      : "Can't get a GPS fix yet. Step outside or wait a moment.", "off"),
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 30000 });
+  keepAwake();
+}
+function parsePaceStr(s) { const m = String(s || "").match(/^(\d+)(?::(\d{1,2}))?$/); return m ? (+m[1]) + (+(m[2] || 0)) / 60 : parsePace(); }
+function setFState(t, cls) { const e = $("fState"); e.textContent = t; e.className = cls; }
+function onFollowPos(p) {
+  const { latitude: la, longitude: lo, accuracy } = p.coords;
+  const pr = progressAlong(F.g, la, lo, F.idx); F.idx = pr.idx;
+  const left = Math.max(0, F.g.total - pr.along);
+  $("fDone").textContent = (pr.along / 1000).toFixed(1) + " km";
+  $("fLeft").textContent = (left / 1000).toFixed(1) + " km";
+  $("fEta").textContent = fmtTime(left / 1000 * parsePaceStr(F.r.pace));
+  const tol = Math.max(35, Math.min(accuracy || 0, 80));
+  if (left < 30 && pr.off < tol) setFState("Finished! Nice drawing.", "on");
+  else if (pr.off <= tol) setFState("On route", "on");
+  else setFState(`Off route: ${Math.round(pr.off)} m from the line. Head back to the blue line.`, "off");
+  const doneLL = F.r.ll.slice(0, pr.idx).concat([F.g.proj.ll(...lerp(F.g.xy[pr.idx - 1], F.g.xy[pr.idx], (pr.along - F.g.cum[pr.idx - 1]) / ((F.g.cum[pr.idx] - F.g.cum[pr.idx - 1]) || 1)))]);
+  F.done.setLatLngs(doneLL);
+  if (!F.me) {
+    F.acc = L.circle([la, lo], { radius: accuracy || 10, color: "#1a73ff", weight: 1, fillOpacity: .12 }).addTo(F.map);
+    F.me = L.marker([la, lo], { icon: L.divIcon({ className: "", html: '<div class="me"></div>', iconSize: [18, 18] }), keyboard: false }).addTo(F.map);
+    F.layers.push(F.acc, F.me);
+    F.map.setView([la, lo], 17);
+  } else { F.me.setLatLng([la, lo]); F.acc.setLatLng([la, lo]).setRadius(accuracy || 10); if (F.center) F.map.panTo([la, lo]); }
+}
+function lerp(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+async function keepAwake() {
+  try { if ("wakeLock" in navigator && !F.wake && !$("follow").hidden) { F.wake = await navigator.wakeLock.request("screen"); F.wake.addEventListener("release", () => { F.wake = null; }); } } catch (e) { /* not allowed here */ }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") keepAwake(); });
+function closeFollow() {
+  if (F.watch !== null) navigator.geolocation.clearWatch(F.watch); F.watch = null;
+  if (F.wake) F.wake.release().catch(() => {}); F.wake = null;
+  $("follow").hidden = true; document.body.classList.remove("following");
+}
+$("fExit").onclick = closeFollow;
+$("fCenter").onclick = () => { F.center = true; if (F.me) F.map.setView(F.me.getLatLng(), Math.max(F.map.getZoom(), 16)); };
+$("fShare").onclick = async () => { if (await shareGpx(F.r) === "downloaded") toast("GPX downloaded"); };
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("follow").hidden) closeFollow(); });
+
+renderSaved();
+window.__routeArt = { traceImage, normShape, buildGraph, searchPlacements, routeShape, routeStats, projector, place, pickDiverse, progressAlong, routeGeometry, gpxText, routeTiles };
 </script>
 </body>
 </html>

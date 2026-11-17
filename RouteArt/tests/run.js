@@ -7,8 +7,11 @@
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
+const http = require("http");
 
-const PAGE = "file://" + path.resolve(__dirname, "..", "index.html");
+const ROOT = path.resolve(__dirname, "..");
+const TYPES = { ".html": "text/html", ".js": "text/javascript", ".png": "image/png", ".webmanifest": "application/manifest+json" };
+let PAGE; // set once the local server is up
 const LEAFLET = path.dirname(require.resolve("leaflet/dist/leaflet.js"));
 const LAT0 = 37.5665, LON0 = 126.978; // Seoul City Hall, a public landmark
 const ky = 111320, kx = 111320 * Math.cos(LAT0 * Math.PI / 180);
@@ -38,8 +41,9 @@ function fakeCity(bb, opts) { // bb = [south, west, north, east]
 const HEART = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="white"/>
 <path d="M150 260 C 40 180 10 120 40 75 C 70 30 130 40 150 90 C 170 40 230 30 260 75 C 290 120 260 180 150 260 Z" fill="black"/></svg>`;
 
-async function scenario(browser, name, { mountains, lake, maxKm = 20 }) {
-  const page = await browser.newPage({ viewport: { width: 420, height: 900 } });
+async function scenario(browser, name, { mountains, lake, maxKm = 20, after }) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: "block", acceptDownloads: true });
+  const page = await context.newPage();
   const errors = [];
   page.on("pageerror", e => errors.push(e.message));
   await page.route("**/*", r => {
@@ -54,7 +58,7 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20 }) {
     if (u.includes("nominatim") && u.includes("/search")) return json([{ lat: String(LAT0), lon: String(LON0) }]);
     if (u.includes("nominatim") && u.includes("/reverse")) return json({ address: { city: "서울특별시" }, boundingbox: ["37.41", "37.70", "126.76", "127.18"] });
     if (u.includes("open-meteo")) { const n = new URL(u).searchParams.get("latitude").split(",").length; return json({ elevation: Array.from({ length: n }, (_, i) => 30 + 10 * Math.sin(i / 5)) }); }
-    if (u.startsWith("file:")) return r.continue();
+    if (u.startsWith(PAGE)) return r.continue();
     return r.fulfill({ status: 404, body: "" }); // fonts, map tiles
   });
   await page.goto(PAGE);
@@ -74,22 +78,79 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20 }) {
     status: goStatus.textContent, note: areaNote.textContent,
     options: [...document.querySelectorAll(".cand")].map(b => b.textContent),
     km: parseFloat(sDist.textContent), trailKm: parseFloat(sTrail.textContent), match: parseInt(sMatch.textContent),
-    gpx: dlBtn.href.startsWith("blob:"),
   }));
-  await page.close();
+  if (after) out.after = await after(page, context);
+  await context.close();
   return { name, errors, ...out };
 }
 
+async function followAndSave(page, context) {
+  const res = {}, shots = process.env.SHOTS; // optional folder for screenshots
+  if (shots) await page.screenshot({ path: path.join(shots, "results.png"), fullPage: true });
+  await context.grantPermissions(["geolocation"], { origin: new URL(PAGE).origin });
+  const pt = await page.evaluate(() => { const ll = S.cands[S.sel].ll; return ll[Math.floor(ll.length * 0.3)]; });
+  await context.setGeolocation({ latitude: pt[0], longitude: pt[1], accuracy: 8 });
+  await page.click("#followBtn");
+  await page.waitForFunction(() => document.getElementById("fState").textContent === "On route", null, { timeout: 10000 });
+  res.done = parseFloat(await page.textContent("#fDone"));
+  if (shots) { await page.waitForTimeout(300); await page.screenshot({ path: path.join(shots, "follow.png") }); }
+  res.left = parseFloat(await page.textContent("#fLeft"));
+  await context.setGeolocation({ latitude: pt[0], longitude: pt[1] + 300 / 88000, accuracy: 8 }); // ~300 m east
+  await page.waitForFunction(() => document.getElementById("fState").textContent.startsWith("Off route"), null, { timeout: 10000 });
+  res.offRoute = true;
+  const dl = page.waitForEvent("download");
+  await page.click("#fShare"); // headless Chromium has no share sheet, so this falls back to a download
+  const file = await dl;
+  res.gpx = fs.readFileSync(await file.path(), "utf8");
+  res.gpxName = file.suggestedFilename();
+  await page.click("#fExit");
+  res.savedBefore = await page.locator("#savedList li").count();
+  await page.reload();
+  res.savedAfterReload = await page.locator("#savedList li").count();
+  await page.click("#savedList li .danger");
+  res.armed = await page.textContent("#savedList li .danger");
+  await page.click("#savedList li .danger");
+  res.savedAfterDelete = await page.locator("#savedList li").count();
+  return res;
+}
+
+async function installCheck(browser) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 },
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
+  const page = await context.newPage();
+  await page.route("**/*", r => {
+    const u = r.request().url();
+    if (u.includes("leaflet.min.js")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.js")), contentType: "text/javascript" });
+    return u.startsWith(PAGE) ? r.continue() : r.fulfill({ status: 404, body: "" });
+  });
+  await page.goto(PAGE);
+  const res = await page.evaluate(async () => {
+    const reg = await Promise.race([navigator.serviceWorker.ready.then(() => true), new Promise(r => setTimeout(() => r(false), 8000))]);
+    const man = await (await fetch(document.querySelector("link[rel=manifest]").href)).json();
+    const icons = await Promise.all(["icon-180.png", ...man.icons.map(i => i.src)].map(async s => (await fetch(s)).ok));
+    return { sw: reg, display: man.display, icons: icons.every(Boolean), touchIcon: !!document.querySelector("link[rel=apple-touch-icon]"),
+      tip: !document.getElementById("installTip").hidden };
+  });
+  await context.close();
+  return res;
+}
+
 (async () => {
+  const server = http.createServer((req, res) => {
+    const f = path.join(ROOT, decodeURIComponent(new URL(req.url, "http://x").pathname).replace(/\/$/, "/index.html"));
+    if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { "Content-Type": TYPES[path.extname(f)] || "application/octet-stream" }); fs.createReadStream(f).pipe(res);
+  });
+  await new Promise(r => server.listen(0, "127.0.0.1", r));
+  PAGE = `http://localhost:${server.address().port}/`;
   const browser = await chromium.launch();
   const checks = [];
   const ok = (cond, msg) => checks.push([!!cond, msg]);
-  const a = await scenario(browser, "neighborhood, trails allowed", { mountains: true });
+  const a = await scenario(browser, "neighborhood, trails allowed", { mountains: true, after: followAndSave });
   ok(a.status.startsWith("Done"), `${a.name}: finished (${a.status})`);
   ok(a.match >= 70, `${a.name}: shape match ${a.match}% >= 70%`);
   ok(a.km > 2 && a.km <= 20, `${a.name}: distance ${a.km} km within 20 km`);
   ok(a.note.includes("neighborhood"), `${a.name}: stayed in the neighborhood`);
-  ok(a.gpx, `${a.name}: GPX ready`);
   const b = await scenario(browser, "neighborhood, streets only", { mountains: false });
   ok(b.status.startsWith("Done"), `${b.name}: finished`);
   ok(b.trailKm === 0, `${b.name}: no trail used (${b.trailKm} km)`);
@@ -99,8 +160,18 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20 }) {
   ok(c.match >= 70, `${c.name}: shape match ${c.match}% >= 70%`);
   const d = await scenario(browser, "short limit", { mountains: true, maxKm: 6 });
   ok(d.status.startsWith("Done") && d.km <= 6, `${d.name}: respects a 6 km limit (${d.km} km)`);
+  const f = a.after;
+  ok(f.done > 0 && f.left > 0, `follow: progress shown (${f.done} km done, ${f.left} km to go)`);
+  ok(f.offRoute, "follow: warns when 300 m off the route");
+  ok(/<trkpt lat=/.test(f.gpx) && f.gpx.includes("<gpx"), `share: GPX file produced (${f.gpxName})`);
+  ok(f.savedBefore === 1 && f.savedAfterReload === 1, "my routes: route saved and still there after reopening");
+  ok(f.armed.includes("again") && f.savedAfterDelete === 0, "my routes: delete asks for a second tap, then removes it");
+  const i = await installCheck(browser);
+  ok(i.sw, "install: offline service worker active");
+  ok(i.display === "standalone" && i.icons && i.touchIcon, "install: manifest and home-screen icons in place");
+  ok(i.tip, "install: iPhone Safari shows the Add to Home Screen tip");
   for (const s of [a, b, c, d]) ok(!s.errors.length, `${s.name}: no script errors ${s.errors.join("; ")}`);
-  await browser.close();
+  await browser.close(); server.close();
   for (const [pass, msg] of checks) console.log(pass ? "PASS" : "FAIL", msg);
   for (const s of [a, b, c, d]) console.log(`  ${s.name}: ${s.options.join(" | ")}`);
   process.exit(checks.every(c => c[0]) ? 0 : 1);
