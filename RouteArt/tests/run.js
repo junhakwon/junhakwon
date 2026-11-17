@@ -56,7 +56,7 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after, whe
     if (u.includes("leaflet.min.css")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.css")), contentType: "text/css" });
     if (u.includes("/interpreter")) {
       const q = decodeURIComponent(r.request().postData().slice(5));
-      if (process.env.SLOW) await new Promise(res => setTimeout(res, +process.env.SLOW));
+      await new Promise(res => setTimeout(res, +(process.env.SLOW || 400))); // real map data takes seconds; keeps the progress bar test meaningful on fast machines
       if (q.includes("place~")) return json({ elements: PLACES.map(([name, dx, dy], i) => ({ type: "node", id: 9e6 + i, lat: LAT0 + dy / ky, lon: LON0 + dx / kx, tags: { place: "suburb", name } })) });
       return json(fakeCity(q.match(/\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\)/).slice(1).map(Number), { lake }));
     }
