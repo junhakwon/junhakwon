@@ -113,6 +113,18 @@ button.danger { color: var(--ghost); }
 .fbtns button { flex: 1; justify-content: center; }
 .me { width: 18px; height: 18px; border-radius: 50%; background: #1a73ff; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(26,115,255,.35); }
 body.following { overflow: hidden; }
+/* Progress overlay, centred on screen while a route is being made */
+#prog { position: fixed; inset: 0; z-index: 1800; display: grid; place-items: center;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) 16px max(16px, env(safe-area-inset-left, 0px));
+  background: color-mix(in srgb, var(--bg) 70%, transparent); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.pcard { width: min(360px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 18px; display: grid; gap: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .12); }
+#progTitle { margin: 0; font: 600 17px/1.2 var(--display); }
+.ptrack { height: 10px; border-radius: 99px; background: var(--bg); overflow: hidden; border: 1px solid var(--line); }
+.pfill { height: 100%; width: 0; background: var(--route); border-radius: 99px; transition: width .15s linear; }
+.prow { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+#progLabel { color: var(--muted); font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+#progPct { font: 600 20px/1 var(--display); font-variant-numeric: tabular-nums; }
 @media (max-width: 480px) { .drop { grid-template-columns: 1fr 1fr; } #map { height: 360px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
@@ -237,6 +249,13 @@ body.following { overflow: hidden; }
   </div>
 </div>
 <div class="toast" id="toast" hidden role="status"></div>
+<div id="prog" hidden>
+  <div class="pcard" role="progressbar" aria-labelledby="progTitle" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progBar">
+    <p id="progTitle">Drawing your route</p>
+    <div class="ptrack"><div class="pfill" id="progFill"></div></div>
+    <div class="prow"><span id="progLabel">Starting…</span><b id="progPct">0%</b></div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -657,6 +676,37 @@ function routeStats(G, nodes, shape, a = 0, b = nodes.length - 1) {
 }
 function minDistToPolyline(x, y, p) { let m = Infinity; for (let i = 1; i < p.length; i++) m = Math.min(m, segDist(x, y, p[i - 1][0], p[i - 1][1], p[i][0], p[i][1])); return m; }
 
+// ---------- progress overlay ----------
+// The map servers don't report download progress, so each step sets where the bar
+// is now ("at") and how far it may creep while waiting ("upTo"), never going backwards.
+const PB = { v: 0, at: 0, upTo: 0, timer: null };
+window.__routeArtProgress = []; // read by the tests
+function progressOpen(title) {
+  Object.assign(PB, { v: 0, at: 0, upTo: 0 });
+  $("progTitle").textContent = title || "Drawing your route"; $("progLabel").textContent = "Starting…";
+  $("prog").hidden = false; renderProgress();
+  clearInterval(PB.timer); PB.timer = setInterval(() => {
+    if (PB.v < PB.at) PB.v = Math.min(PB.at, PB.v + Math.max(0.6, (PB.at - PB.v) * 0.35));
+    else if (PB.v < PB.upTo - 0.5) PB.v += (PB.upTo - PB.v) * 0.025;
+    renderProgress();
+  }, 150);
+}
+function progressTo(at, label, upTo) {
+  PB.at = Math.max(PB.at, Math.min(99, at));
+  PB.upTo = upTo === undefined ? Math.max(PB.upTo, PB.at) : Math.min(99, Math.max(PB.at, upTo));
+  if (label) $("progLabel").textContent = label;
+}
+function renderProgress() {
+  const v = Math.floor(PB.v);
+  $("progFill").style.width = PB.v + "%"; $("progPct").textContent = v + "%"; $("progBar").setAttribute("aria-valuenow", v);
+  const log = window.__routeArtProgress; if (log[log.length - 1] !== v && log.length < 2000) log.push(v);
+}
+async function progressClose(ok) {
+  clearInterval(PB.timer);
+  if (ok) { PB.v = 100; $("progLabel").textContent = "Done"; renderProgress(); await new Promise(r => setTimeout(r, 450)); }
+  $("prog").hidden = true;
+}
+
 // ---------- main flow ----------
 // Lighter street set for searching many places: skips sidewalks and service roads,
 // which are most of the data in Korean cities but rarely change the shape of a fit.
@@ -688,8 +738,11 @@ function updateGo() {
 document.querySelectorAll('input[name="mtn"]').forEach(r => r.addEventListener("change", updateGo));
 $("where").addEventListener("input", updateGo);
 document.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => { $("where").value = b.dataset.where; updateGo(); }));
-$("goBtn").onclick = () => run().catch(e => { status(e.message || String(e), true); console.error(e); }).finally(() => { delete $("goStatus").dataset.busy; updateGo(); });
-$("moreBtn").onclick = () => searchMore().catch(e => { status(e.message || String(e), true); console.error(e); });
+$("goBtn").onclick = () => { progressOpen("Drawing your route");
+  run().then(() => progressClose(true), e => { progressClose(false); status(e.message || String(e), true); console.error(e); })
+    .finally(() => { delete $("goStatus").dataset.busy; updateGo(); }); };
+$("moreBtn").onclick = () => { progressOpen("Checking more places");
+  searchMore().then(() => progressClose(true), e => { progressClose(false); status(e.message || String(e), true); console.error(e); }); };
 function status(t, err) { $("goStatus").className = "status" + (err ? " err" : ""); $("goStatus").textContent = t; }
 const tick = () => new Promise(r => setTimeout(r, 0));
 function parsePace() { const m = $("pace").value.trim().match(/^(\d+)(?::(\d{1,2}))?$/); return m ? (+m[1]) + (+(m[2] || 0)) / 60 : 6; }
@@ -709,7 +762,8 @@ async function run() {
   const near = await runNear(opts);
   if (near.length && near[0].match >= 60)
     return showResults(near.sort((a, b) => a.dist - b.dist), "These routes fit around your start point. Grey dotted lines are the run to and from the drawing.");
-  status("It doesn't fit well near your start. Searching the rest of your city…"); await tick();
+  status("It doesn't fit well near your start. Searching the rest of your city…");
+  progressTo(40, "Not a good fit nearby. Searching your city…", 43); await tick();
   const city = await cityOf(S.start.lat, S.start.lon);
   if (!city) { if (near.length) return showResults(near, "The best fits near your start point."); throw new Error("Couldn't fit this picture nearby. Try a place under Where, like Seoul or The World."); }
   return startRegion(city, opts, near);
@@ -717,13 +771,15 @@ async function run() {
 
 async function runNear(opts) {
   const { lat, lon } = S.start, proj = projector(lat, lon), half = 3000;
-  status("Loading streets around your start point…"); await tick();
+  status("Loading streets around your start point…"); progressTo(3, "Loading streets around your start…", 24); await tick();
   const sw = proj.ll(-half, -half), ne = proj.ll(half, half);
   const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]]), proj, opts.allowTrails);
-  status("Fitting your picture onto the streets…"); await tick();
+  status("Fitting your picture onto the streets…"); progressTo(26, "Fitting your picture onto the streets…", 30); await tick();
   const cands = searchPlacements(G, opts.unit, { sizes: opts.sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
     reach: P => P / (2 * Math.PI) * 0.8 + 250 });
-  return onePerSize(await routeCandidates(G, pickDiverse(cands, 3), opts.unit, [0, 0], $("loopHome").checked, opts.maxM, proj));
+  progressTo(31, "Drawing route options…", 33);
+  return onePerSize(await routeCandidates(G, pickDiverse(cands, 3), opts.unit, [0, 0], $("loopHome").checked, opts.maxM, proj,
+    (i, n) => progressTo(31 + 9 * i / n, `Drawing route option ${Math.min(i + 1, n)} of ${n}…`, 31 + 9 * (i + 1) / n)));
 }
 
 async function cityOf(lat, lon) {
@@ -779,10 +835,12 @@ function farthestFirst(pts, from) { // nearest place first, then always the plac
 }
 
 async function startRegion(q, opts, seed) {
-  status(`Looking up ${q}…`); await tick();
+  const base = PB.at, span = 100 - base;
+  status(`Looking up ${q}…`); progressTo(base + span * 0.01, `Looking up ${q}…`, base + span * 0.04); await tick();
   const reg = await resolveRegion(q);
-  status(`Finding places to try in ${reg.name}…`); await tick();
+  status(`Finding places to try in ${reg.name}…`); progressTo(base + span * 0.05, `Finding places to try in ${reg.name}…`, base + span * 0.09); await tick();
   const places = await regionPlaces(reg);
+  progressTo(base + span * 0.1);
   if (!places.length) throw new Error(`Couldn't find places to try in ${reg.name}. Try a bigger area, or The World.`);
   S.region = { name: reg.name, queue: places, total: places.length, checked: 0, opts, pool: seed.map(c => ({ ...c, place: "Near your start" })) };
   return searchMore();
@@ -792,13 +850,21 @@ async function searchMore() {
   const R = S.region; if (!R) return;
   $("goStatus").dataset.busy = "1"; $("goBtn").disabled = true; $("moreBtn").disabled = true;
   try {
-    const batch = R.queue.splice(0, 8);
+    const batch = R.queue.splice(0, 8), n = batch.length, from = PB.at, span = 100 - from;
+    const frac = new Map(); let started = 0;
+    const upd = (label) => { // each place is an equal share of what's left of the bar
+      let done = 0, ahead = 0; for (const [, f] of frac) { done += f.at; ahead += f.upTo; }
+      progressTo(from + span * done / n, label, from + span * ahead / n);
+    };
     const best = () => R.pool.reduce((b, c) => (!b || c.match > b.match ? c : b), null);
     status(`Checking places in ${R.name}…`);
     const worker = async () => {
       while (batch.length) {
-        const pl = batch.shift();
-        try { R.pool.push(...await evalPlace(pl, R.opts)); } catch (e) { console.warn(pl.name, e); }
+        const pl = batch.shift(), k = ++started, f = { at: 0, upTo: 0.6 }; frac.set(pl, f);
+        const label = `Checking ${pl.name} · ${k} of ${n}`;
+        upd(label);
+        try { R.pool.push(...await evalPlace(pl, R.opts, (at, upTo) => { f.at = at; f.upTo = upTo; upd(label); })); } catch (e) { console.warn(pl.name, e); }
+        f.at = f.upTo = 1; upd();
         R.checked++; const b = best();
         status(`Checked ${R.checked} of ${R.total} places in ${R.name}${b ? ` · best so far ${b.match}% in ${b.place}` : ""}…`);
       }
@@ -815,15 +881,17 @@ async function searchMore() {
   }
 }
 
-async function evalPlace(pl, opts) {
+async function evalPlace(pl, opts, onProgress = () => {}) {
   const proj = projector(pl.lat, pl.lon), half = 3000;
   const sw = proj.ll(-half, -half), ne = proj.ll(half, half);
+  onProgress(0.02, 0.6);
   const G = buildGraph(await overpass([sw[0], sw[1], ne[0], ne[1]], HW_LIGHT), proj, opts.allowTrails);
   if (G.grid.size < 40) return []; // water, fields or mountains with no paths
-  await tick();
+  onProgress(0.62, 0.75); await tick();
   const c = searchPlacements(G, opts.unit, { sizes: opts.sizes, cx: 0, cy: 0, bx: [-half + 150, -half + 150, half - 150, half - 150],
     reach: P => Math.max(200, half - 150 - P / (2 * Math.PI) * 0.9), step: P => Math.max(160, P * 0.04) });
-  const r = await routeCandidates(G, pickDiverse(c, 2), opts.unit, [0, 0], false, opts.maxM, proj);
+  onProgress(0.75, 0.8);
+  const r = await routeCandidates(G, pickDiverse(c, 2), opts.unit, [0, 0], false, opts.maxM, proj, (i, n) => onProgress(0.75 + 0.25 * i / n, 0.75 + 0.25 * (i + 1) / n));
   r.forEach(x => { x.place = pl.name; });
   return r;
 }
@@ -846,10 +914,10 @@ function onePerSize(list) { // up to 3 routes that differ clearly in length, bes
     if (out.length < 3 && out.every(o => Math.abs(o.dist - c.dist) > 0.15 * Math.min(o.dist, c.dist))) out.push(c);
   return out;
 }
-async function routeCandidates(G, list, unit, startXY, loopHome, maxM, proj) {
+async function routeCandidates(G, list, unit, startXY, loopHome, maxM, proj, onStep = () => {}) {
   const out = [];
-  for (const c of list) {
-    await tick();
+  for (const [i, c] of list.entries()) {
+    onStep(i, list.length); await tick();
     const shape = place(unit, c.P, c.rot, c.cx, c.cy);
     const r = routeShape(G, shape, loopHome ? startXY : null, loopHome);
     if (r.b - r.a < 3) continue;

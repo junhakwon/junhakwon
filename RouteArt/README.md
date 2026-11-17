@@ -88,6 +88,8 @@ A detailed picture only looks right where the streets happen to run in its shape
 | A country ("South Korea") | Its cities and towns, biggest population first, at least 20 km apart |
 | "The World" | 32 dense, walkable cities with very different street patterns: grids (Manhattan, Barcelona, Chicago), diagonals (Washington, Buenos Aires), organic old towns (Tokyo, London, Seoul, Rome) |
 
+While a route is being made, a progress card in the middle of the screen shows 0–100% and the current step ("Checking 망원동 · 3 of 8"). The map servers don't report download progress, so each step moves the bar to a fixed point and it creeps forward while waiting, never going backwards.
+
 Places are checked 8 at a time, two in parallel (the public map servers allow two requests at once), showing the best match so far. **Check more places** continues through the list. Each place loads a 6 × 6 km square of streets without sidewalks and service roads, which keeps the download small. Results show the top 3 places, each named, with how far it is from the start point if one was set. No start point is needed for a place search.
 
 ### 8. Scoring and estimates
@@ -132,6 +134,7 @@ All are free and need no key. If the app ever gets lots of users, the public Ove
 - a 6 km limit is respected
 - "Seoul" with no start point checks named neighbourhoods and returns named options
 - "The World" checks cities around the world
+- the progress bar runs from 0% to 100% without going backwards, then closes
 - the Draw button stays off until the start, the picture and the mountain answer are all given
 - no script errors
 
@@ -148,7 +151,7 @@ The GitHub Action `.github/workflows/route-art.yml` runs this on every push that
 | 1 | App logic: tracing, fitting, routing, city fallback, mountain filter, time estimate, GPX | Claude | Done |
 | 2 | Automated tests with a fake city | Claude | Done, 15/15 pass |
 | 3 | CI that tests every push and publishes to GitHub Pages | Claude | Done |
-| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 29/29 checks pass |
+| 3b | iPhone app: home-screen install, Follow mode, share sheet, My routes, offline | Claude | Done, 32/32 checks pass |
 | 4 | Merge the branch into the default branch | You (GitHub app or website, tablet is fine) | To do |
 | 5 | Turn on Pages once: Settings → Pages → Source → **GitHub Actions**, then re-run the "Route Art" workflow | You (website) | To do |
 | 6 | Open `https://junhakwon.github.io/junhakwon/RouteArt/` in Safari on your iPhone, then Share → Add to Home Screen | You | To do |

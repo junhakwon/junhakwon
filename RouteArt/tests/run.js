@@ -49,13 +49,14 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after, whe
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", e => errors.push(e.message));
-  await page.route("**/*", r => {
+  await page.route("**/*", async r => {
     const u = r.request().url();
     const json = body => r.fulfill({ body: JSON.stringify(body), contentType: "application/json" });
     if (u.includes("leaflet.min.js")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.js")), contentType: "text/javascript" });
     if (u.includes("leaflet.min.css")) return r.fulfill({ body: fs.readFileSync(path.join(LEAFLET, "leaflet.css")), contentType: "text/css" });
     if (u.includes("/interpreter")) {
       const q = decodeURIComponent(r.request().postData().slice(5));
+      if (process.env.SLOW) await new Promise(res => setTimeout(res, +process.env.SLOW));
       if (q.includes("place~")) return json({ elements: PLACES.map(([name, dx, dy], i) => ({ type: "node", id: 9e6 + i, lat: LAT0 + dy / ky, lon: LON0 + dx / kx, tags: { place: "suburb", name } })) });
       return json(fakeCity(q.match(/\(([-\d.]+),([-\d.]+),([-\d.]+),([-\d.]+)\)/).slice(1).map(Number), { lake }));
     }
@@ -83,10 +84,12 @@ async function scenario(browser, name, { mountains, lake, maxKm = 20, after, whe
   await page.fill("#maxKm", String(maxKm));
   await page.check(`input[name=mtn][value=${mountains ? "yes" : "no"}]`);
   await page.click("#goBtn");
+  if (process.env.SHOTS && where) { await page.waitForTimeout(2500); await page.screenshot({ path: path.join(process.env.SHOTS, "progress.png") }); }
   await page.waitForFunction(() => { const g = document.getElementById("goStatus"); return !g.dataset.busy && (/^Done/.test(g.textContent) || g.classList.contains("err")); }, null, { timeout: 120000 })
     .catch(async err => { throw new Error(`${name}: no result. Status: ${await page.textContent("#goStatus")} ${errors.join("; ")}`); });
   await page.waitForTimeout(500);
   const out = await page.evaluate(() => ({
+    progress: window.__routeArtProgress.slice(), overlayHidden: document.getElementById("prog").hidden,
     status: goStatus.textContent, note: areaNote.textContent,
     options: [...document.querySelectorAll(".cand")].map(b => b.textContent),
     km: parseFloat(sDist.textContent), trailKm: parseFloat(sTrail.textContent), match: parseInt(sMatch.textContent),
@@ -219,6 +222,11 @@ async function installCheck(browser) {
   ok(i.sw, "install: offline service worker active");
   ok(i.display === "standalone" && i.icons && i.touchIcon, "install: manifest and home-screen icons in place");
   ok(i.tip, "install: iPhone Safari shows the Add to Home Screen tip");
+  for (const s of [a, c, e]) {
+    const p = s.progress, rising = p.every((v, i) => !i || v >= p[i - 1]);
+    ok(p[0] === 0 && p[p.length - 1] === 100 && rising && p.length >= 3 && s.overlayHidden,
+      `${s.name}: progress bar ran 0% → 100% without going back (${p.length} steps), then closed`);
+  }
   for (const s of [a, b, c, d, e, w]) ok(!s.errors.length, `${s.name}: no script errors ${s.errors.join("; ")}`);
   await browser.close(); server.close();
   for (const [pass, msg] of checks) console.log(pass ? "PASS" : "FAIL", msg);
